@@ -51,7 +51,7 @@ def test_default_values():
 def test_missing_required_fields():
     """Verify ValidationError is raised when required fields are missing."""
     with pytest.raises(ValidationError):
-        Settings()
+        Settings(_env_file=None)
 
 
 def test_string_and_whitespace_rector_chat_id():
