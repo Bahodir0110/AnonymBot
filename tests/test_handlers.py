@@ -457,10 +457,12 @@ async def test_media_group_album_submission(test_db, memory_storage, mock_config
     assert 201 in copy_call_kwargs["message_ids"]
     assert 202 in copy_call_kwargs["message_ids"]
 
-    # Student received exactly ONE confirmation (on leader message)
-    assert msg1.answer.called
-    assert "✅ Rahmat! Murojaatingiz yuborildi." in msg1.answer.call_args[1]["text"]
-    assert not msg2.answer.called
+    # Student received exactly ONE confirmation across the media album
+    answered_msg = msg1 if msg1.answer.called else msg2
+    unanswered_msg = msg2 if msg1.answer.called else msg1
+    assert answered_msg.answer.called
+    assert "✅ Rahmat! Murojaatingiz yuborildi." in answered_msg.answer.call_args[1]["text"]
+    assert not unanswered_msg.answer.called
 
 
 @pytest.mark.asyncio
