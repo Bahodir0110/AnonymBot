@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Union
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables or .env file."""
 
     bot_token: str = Field(..., description="Telegram bot API token")
-    rector_chat_id: int = Field(..., description="Telegram chat ID for Rector delivery")
+    rector_chat_id: Union[int, str] = Field(..., description="Telegram chat ID for Rector delivery")
     rector_thread_id: Optional[int] = Field(
         default=None,
         description="Optional message thread ID for supergroup forum topic"
@@ -30,6 +30,17 @@ class Settings(BaseSettings):
         default="INFO",
         description="Logging level"
     )
+
+    @field_validator("rector_chat_id", mode="before")
+    @classmethod
+    def parse_rector_chat_id(cls, v):
+        if isinstance(v, str):
+            v_strip = v.strip().strip("'\"")
+            try:
+                return int(v_strip)
+            except ValueError:
+                return v_strip
+        return v
 
     @field_validator("rector_thread_id", mode="before")
     @classmethod

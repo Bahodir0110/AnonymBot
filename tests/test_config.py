@@ -52,3 +52,21 @@ def test_missing_required_fields():
     """Verify ValidationError is raised when required fields are missing."""
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_string_and_whitespace_rector_chat_id():
+    """Verify username string and string integer parsing for RECTOR_CHAT_ID."""
+    # Username channel/group string
+    settings_str = Settings(
+        BOT_TOKEN="test_token",
+        RECTOR_CHAT_ID="@tashtech_rector",
+    )
+    assert settings_str.rector_chat_id == "@tashtech_rector"
+
+    # String integer with whitespace
+    settings_ws = Settings(
+        BOT_TOKEN="test_token",
+        RECTOR_CHAT_ID="  -1001234567890  ",
+    )
+    assert settings_ws.rector_chat_id == -1001234567890
+

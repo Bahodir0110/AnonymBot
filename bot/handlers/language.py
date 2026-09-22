@@ -14,6 +14,7 @@ from bot.locales import (
 )
 
 router = Router(name="language_router")
+router.message.filter(F.chat.type == "private")
 
 
 @router.message(F.text.in_(ALL_CHANGE_LANGUAGE_BTNS))
@@ -41,6 +42,13 @@ async def handle_language_callback(callback: CallbackQuery, state: FSMContext, d
 
     await db.set_user_language(callback.from_user.id, lang_code)
     await callback.answer()
+
+    # Dismiss inline keyboard to prevent repeated clicks
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
 
     # Send confirmation message with new main menu reply keyboard
     confirmation_text = get_text("language_changed", lang=lang_code)

@@ -69,3 +69,16 @@ def test_split_text_chunks():
     assert len(chunks) > 1
     for chunk in chunks:
         assert len(chunk) <= 70
+
+
+def test_split_text_chunks_preserves_html_entities():
+    """Verify split_text_chunks does not cut an HTML entity like &amp; in half."""
+    text = ("A" * 3998) + "&amp;" + ("B" * 50)
+    chunks = split_text_chunks(text, max_chunk_size=4000)
+    assert len(chunks) == 2
+    # Chunk 0 must not end with an incomplete entity like &a
+    assert not chunks[0].endswith("&a")
+    assert not chunks[0].endswith("&")
+    # Chunk 1 must start with the complete entity &amp;
+    assert chunks[1].startswith("&amp;")
+

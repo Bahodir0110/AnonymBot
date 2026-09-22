@@ -1,6 +1,8 @@
-"""Handlers for appeal submission flow, rate limiting, and anonymous forwarding."""
+"""Handlers for appeal submission flow, rate limiting, media group collection, and anonymous forwarding."""
 
+import asyncio
 import logging
+from typing import Dict, List, Optional
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -27,6 +29,59 @@ from bot.utils import (
 logger = logging.getLogger(__name__)
 
 router = Router(name="appeal_router")
+# Restrict student interactions to private chats; do not handle or leak into Rector groups/channels
+router.message.filter(F.chat.type == "private")
+
+
+class MediaGroupCollector:
+    """Collects messages arriving with the same media_group_id over a debounce window."""
+
+    def __init__(self, delay_seconds: float = 0.6) -> None:
+        self.delay_seconds = delay_seconds
+        self._buffers: Dict[str, List[Message]] = {}
+
+    async def add_message(self, message: Message) -> Optional[List[Message]]:
+        """Add a message to the group.
+
+        Returns the complete list of Messages if this invocation is the leader,
+        or None if this is a follower message that was buffered.
+        """
+        group_id = getattr(message, "media_group_id", None)
+        if not group_id:
+            return [message]
+
+        if group_id in self._buffers:
+            self._buffers[group_id].append(message)
+            return None
+
+        # Leader message: initialize buffer and wait for followers
+        self._buffers[group_id] = [message]
+        await asyncio.sleep(self.delay_seconds)
+        return self._buffers.pop(group_id, [message])
+
+
+media_group_collector = MediaGroupCollector()
+
+
+def detect_content_type(message: Message) -> Optional[str]:
+    """Detect supported content type from an incoming message."""
+    if getattr(message, "text", None):
+        return "text"
+    if getattr(message, "photo", None):
+        return "photo"
+    if getattr(message, "document", None):
+        return "document"
+    if getattr(message, "voice", None):
+        return "voice"
+    if getattr(message, "video", None):
+        return "video"
+    if getattr(message, "audio", None):
+        return "audio"
+    if getattr(message, "video_note", None):
+        return "video_note"
+    if getattr(message, "animation", None):
+        return "animation"
+    return None
 
 
 @router.message(F.text.in_(ALL_CANCEL_BTNS))
@@ -122,23 +177,8 @@ async def handle_appeal_content(
         )
         return
 
-    # Identify content type
-    content_type = None
-    if message.text:
-        content_type = "text"
-    elif message.photo:
-        content_type = "photo"
-    elif message.document:
-        content_type = "document"
-    elif message.voice:
-        content_type = "voice"
-    elif message.video:
-        content_type = "video"
-    elif message.audio:
-        content_type = "audio"
-    elif message.video_note:
-        content_type = "video_note"
-
+    # Check content type
+    content_type = detect_content_type(message)
     if content_type is None:
         await message.answer(
             text=get_text("unsupported_content", lang=user_lang),
@@ -147,10 +187,24 @@ async def handle_appeal_content(
         )
         return
 
+    # Handle media groups (albums)
+    messages = await media_group_collector.add_message(message)
+    if messages is None:
+        # Follower message in album: buffered, leader will handle
+        return
+
+    # Ensure state is still waiting_for_appeal
+    current_state = await state.get_state()
+    if current_state != AppealStates.waiting_for_appeal.state:
+        return
+
+    is_album = len(messages) > 1
+    recorded_content_type = "album" if is_album else content_type
+
     # Create appeal record in DB and obtain sequential reference ID (e.g. #TT-0001)
     appeal_id, ref_code = await db.create_appeal(
         language_code=user_lang,
-        content_type=content_type,
+        content_type=recorded_content_type,
     )
 
     # Update cooldown timestamp for student
@@ -173,7 +227,54 @@ async def handle_appeal_content(
         rector_chat_id = config.rector_chat_id
         thread_id = config.rector_thread_id
 
-        if content_type == "text":
+        if is_album:
+            album_caption = next((m.caption for m in messages if m.caption), "")
+            if album_caption:
+                full_header = f"{header}\n\n📝 <b>Izoh:</b>\n{escape_html(album_caption)}"
+            else:
+                full_header = header
+
+            if len(full_header) <= 4096:
+                await bot.send_message(
+                    chat_id=rector_chat_id,
+                    message_thread_id=thread_id,
+                    text=full_header,
+                    parse_mode="HTML",
+                )
+            else:
+                await bot.send_message(
+                    chat_id=rector_chat_id,
+                    message_thread_id=thread_id,
+                    text=header,
+                    parse_mode="HTML",
+                )
+                for chunk in split_text_chunks(escape_html(album_caption)):
+                    await bot.send_message(
+                        chat_id=rector_chat_id,
+                        message_thread_id=thread_id,
+                        text=chunk,
+                        parse_mode="HTML",
+                    )
+
+            msg_ids = [m.message_id for m in messages]
+            try:
+                await bot.copy_messages(
+                    chat_id=rector_chat_id,
+                    message_thread_id=thread_id,
+                    from_chat_id=messages[0].chat.id,
+                    message_ids=msg_ids,
+                    remove_caption=True,
+                )
+            except Exception:
+                for m in messages:
+                    await bot.copy_message(
+                        chat_id=rector_chat_id,
+                        message_thread_id=thread_id,
+                        from_chat_id=m.chat.id,
+                        message_id=m.message_id,
+                        caption="",
+                    )
+        elif content_type == "text":
             full_text = f"{header}\n\n📝 <b>Murojaat matni:</b>\n{escape_html(message.text)}"
             if len(full_text) <= 4096:
                 await bot.send_message(
@@ -198,7 +299,7 @@ async def handle_appeal_content(
                         parse_mode="HTML",
                     )
         else:
-            # Media attachment: anonymously copy to Rector without sender info
+            # Single media attachment
             student_caption = message.caption or ""
             if student_caption:
                 combined_caption = f"{header}\n\n📝 <b>Izoh:</b>\n{escape_html(student_caption)}"
@@ -215,21 +316,41 @@ async def handle_appeal_content(
                     parse_mode="HTML",
                 )
             else:
-                # Caption too long to attach directly to media, send header separately
-                await bot.send_message(
-                    chat_id=rector_chat_id,
-                    message_thread_id=thread_id,
-                    text=header,
-                    parse_mode="HTML",
-                )
+                # Header + caption exceeds 1024 chars (Telegram media caption limit).
+                # Deliver header and student caption as text message(s) first,
+                # then copy media with empty caption to avoid 400 Bad Request errors.
+                caption_text = f"{header}\n\n📝 <b>Izoh:</b>\n{escape_html(student_caption)}"
+                if len(caption_text) <= 4096:
+                    await bot.send_message(
+                        chat_id=rector_chat_id,
+                        message_thread_id=thread_id,
+                        text=caption_text,
+                        parse_mode="HTML",
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=rector_chat_id,
+                        message_thread_id=thread_id,
+                        text=header,
+                        parse_mode="HTML",
+                    )
+                    for chunk in split_text_chunks(escape_html(student_caption)):
+                        await bot.send_message(
+                            chat_id=rector_chat_id,
+                            message_thread_id=thread_id,
+                            text=chunk,
+                            parse_mode="HTML",
+                        )
+
                 await bot.copy_message(
                     chat_id=rector_chat_id,
                     message_thread_id=thread_id,
                     from_chat_id=message.chat.id,
                     message_id=message.message_id,
+                    caption="",
                 )
 
-        logger.info("Delivered appeal %s (type: %s) to Rector chat %s", ref_code, content_type, rector_chat_id)
+        logger.info("Delivered appeal %s (type: %s) to Rector chat %s", ref_code, recorded_content_type, rector_chat_id)
 
         # Send confirmation to student matching UI requirement
         confirmation_msg = get_text("appeal_submitted", lang=user_lang)
@@ -246,3 +367,14 @@ async def handle_appeal_content(
             reply_markup=get_main_reply_keyboard(lang=user_lang),
             parse_mode="HTML",
         )
+
+
+@router.message()
+async def handle_unhandled_message(message: Message, db: Database) -> None:
+    """Guide student back to main menu when receiving message outside active appeal state."""
+    user_lang = await db.get_user_language(message.from_user.id) or "uz"
+    await message.answer(
+        text=get_text("main_menu", lang=user_lang),
+        reply_markup=get_main_reply_keyboard(lang=user_lang),
+        parse_mode="HTML",
+    )

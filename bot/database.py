@@ -1,5 +1,6 @@
 """Database management module using aiosqlite."""
 
+import math
 import os
 import time
 from typing import Optional, Tuple
@@ -98,7 +99,7 @@ class Database:
 
                 last_time = float(row[0])
                 elapsed = time.time() - last_time
-                remaining = int(cooldown_seconds - elapsed)
+                remaining = math.ceil(cooldown_seconds - elapsed)
                 return max(0, remaining)
 
     async def update_last_appeal_time(self, user_id: int, appeal_time: Optional[float] = None) -> None:

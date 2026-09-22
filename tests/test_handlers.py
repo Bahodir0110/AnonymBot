@@ -9,7 +9,13 @@ from aiogram.types import Chat, Message, User, CallbackQuery, PhotoSize
 
 from bot.config import Settings
 from bot.database import Database
-from bot.handlers.appeal import handle_appeal_content, handle_cancel_appeal, handle_start_appeal
+from bot.handlers.appeal import (
+    handle_appeal_content,
+    handle_cancel_appeal,
+    handle_start_appeal,
+    handle_unhandled_message,
+    media_group_collector,
+)
 from bot.handlers.language import handle_language_callback, handle_change_language_button
 from bot.handlers.start import handle_start_command
 from bot.states import AppealStates
@@ -46,7 +52,16 @@ def make_fsm_context(storage, bot_id=1, chat_id=12345, user_id=12345):
     return FSMContext(storage=storage, key=key)
 
 
-def make_mock_message(text=None, user_id=12345, chat_id=12345, photo=None, caption=None):
+def make_mock_message(
+    text=None,
+    user_id=12345,
+    chat_id=12345,
+    photo=None,
+    caption=None,
+    media_group_id=None,
+    animation=None,
+    chat_type="private",
+):
     msg = AsyncMock(spec=Message)
     msg.message_id = 99
     msg.text = text
@@ -57,9 +72,11 @@ def make_mock_message(text=None, user_id=12345, chat_id=12345, photo=None, capti
     msg.video = None
     msg.audio = None
     msg.video_note = None
+    msg.animation = animation
+    msg.media_group_id = media_group_id
 
     user = User(id=user_id, is_bot=False, first_name="Student", username="student123")
-    chat = Chat(id=chat_id, type="private")
+    chat = Chat(id=chat_id, type=chat_type)
     msg.from_user = user
     msg.chat = chat
     msg.answer = AsyncMock()
@@ -397,4 +414,107 @@ async def test_html_injection_prevention(test_db, memory_storage, mock_config):
     assert "<script>" not in rector_text
     assert "&lt;script&gt;" in rector_text
     assert "&lt;invalid_tag&gt;" in rector_text
+
+
+@pytest.mark.asyncio
+async def test_media_group_album_submission(test_db, memory_storage, mock_config):
+    """Test submitting a media album (group of multiple photos) results in a single appeal."""
+    import asyncio
+    media_group_collector.delay_seconds = 0.05
+
+    fsm = make_fsm_context(memory_storage)
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await test_db.set_user_language(12345, "uz")
+
+    mock_bot = AsyncMock()
+    photo1 = [PhotoSize(file_id="p1", file_unique_id="u1", width=100, height=100)]
+    photo2 = [PhotoSize(file_id="p2", file_unique_id="u2", width=100, height=100)]
+
+    msg1 = make_mock_message(photo=photo1, caption="Album caption", media_group_id="group_test_99")
+    msg1.message_id = 201
+    msg2 = make_mock_message(photo=photo2, media_group_id="group_test_99")
+    msg2.message_id = 202
+
+    # Run both message arrivals concurrently
+    await asyncio.gather(
+        handle_appeal_content(msg1, fsm, mock_bot, test_db, mock_config),
+        handle_appeal_content(msg2, fsm, mock_bot, test_db, mock_config),
+    )
+
+    # State cleared
+    assert await fsm.get_state() is None
+
+    # Database must have exactly ONE appeal
+    assert await test_db.get_appeal_count() == 1
+
+    # Header sent with caption
+    assert mock_bot.send_message.called
+    assert "Album caption" in mock_bot.send_message.call_args[1]["text"]
+
+    # Media messages copied together
+    assert mock_bot.copy_messages.called
+    copy_call_kwargs = mock_bot.copy_messages.call_args[1]
+    assert 201 in copy_call_kwargs["message_ids"]
+    assert 202 in copy_call_kwargs["message_ids"]
+
+    # Student received exactly ONE confirmation (on leader message)
+    assert msg1.answer.called
+    assert "✅ Rahmat! Murojaatingiz yuborildi." in msg1.answer.call_args[1]["text"]
+    assert not msg2.answer.called
+
+
+@pytest.mark.asyncio
+async def test_animation_gif_submission(test_db, memory_storage, mock_config):
+    """Test submitting GIF/animation is supported and forwarded to Rector."""
+    fsm = make_fsm_context(memory_storage)
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await test_db.set_user_language(12345, "en")
+
+    mock_bot = AsyncMock()
+    msg = make_mock_message(animation=MagicMock(), caption="GIF demonstration")
+
+    await handle_appeal_content(msg, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.copy_message.called
+    assert "#TT-0001" in mock_bot.copy_message.call_args[1]["caption"]
+    assert "GIF demonstration" in mock_bot.copy_message.call_args[1]["caption"]
+
+
+@pytest.mark.asyncio
+async def test_unhandled_message_outside_appeal(test_db):
+    """Test message received outside of appeal state replies with main menu."""
+    await test_db.set_user_language(12345, "uz")
+    msg = make_mock_message(text="Tasodifiy xabar")
+
+    await handle_unhandled_message(message=msg, db=test_db)
+
+    assert msg.answer.called
+    answer_text = msg.answer.call_args[1]["text"]
+    assert "Asosiy menyu" in answer_text
+    assert msg.answer.call_args[1]["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_photo_with_extreme_long_caption(test_db, memory_storage, mock_config):
+    """Test photo with caption > 1024 chars delivers full text in message and copies media cleanly."""
+    fsm = make_fsm_context(memory_storage)
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await test_db.set_user_language(12345, "uz")
+
+    mock_bot = AsyncMock()
+    photo_mock = [PhotoSize(file_id="p1", file_unique_id="u1", width=100, height=100)]
+    long_caption = "Long explanation " * 70  # ~1190 chars
+    msg = make_mock_message(photo=photo_mock, caption=long_caption)
+
+    await handle_appeal_content(msg, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    # Header and full caption must be sent via send_message
+    assert mock_bot.send_message.called
+    assert "Long explanation" in mock_bot.send_message.call_args[1]["text"]
+    # Media must be copied with empty caption
+    assert mock_bot.copy_message.called
+    assert mock_bot.copy_message.call_args[1]["caption"] == ""
+
 

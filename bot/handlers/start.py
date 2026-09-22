@@ -1,6 +1,6 @@
 """Handler for /start command."""
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -10,6 +10,7 @@ from bot.keyboards import get_language_inline_keyboard, get_main_reply_keyboard
 from bot.locales import get_text
 
 router = Router(name="start_router")
+router.message.filter(F.chat.type == "private")
 
 
 @router.message(CommandStart())

@@ -56,7 +56,7 @@ def build_rector_header(reference_id: str, timestamp_str: str, language_name: st
 
 
 def split_text_chunks(text: str, max_chunk_size: int = 4000) -> List[str]:
-    """Split long text into chunks that fit within Telegram's limits."""
+    """Split long text into chunks that fit within Telegram's limits without breaking HTML entities."""
     if len(text) <= max_chunk_size:
         return [text]
 
@@ -73,6 +73,18 @@ def split_text_chunks(text: str, max_chunk_size: int = 4000) -> List[str]:
         if split_idx == -1 or split_idx < max_chunk_size // 2:
             split_idx = max_chunk_size
 
-        chunks.append(text[:split_idx].strip())
+        # Guard against splitting in the middle of an HTML entity like &amp;, &#x27;, &lt;, &gt;
+        amp_idx = text.rfind("&", max(0, split_idx - 10), split_idx)
+        if amp_idx != -1:
+            semicolon_idx = text.find(";", amp_idx, split_idx + 10)
+            if semicolon_idx != -1 and semicolon_idx >= split_idx:
+                split_idx = amp_idx
+
+        chunk = text[:split_idx].strip()
+        if not chunk:
+            chunk = text[:max_chunk_size]
+            split_idx = max_chunk_size
+
+        chunks.append(chunk)
         text = text[split_idx:].lstrip()
     return chunks
