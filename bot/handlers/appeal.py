@@ -17,10 +17,12 @@ from bot.keyboards import (
 )
 from bot.locales import (
     ALL_ANONYMOUS_BTNS,
+    ALL_APPEAL_TYPE_BTNS,
     ALL_CANCEL_BTNS,
     ALL_CHANGE_LANGUAGE_BTNS,
     ALL_OPEN_BTNS,
     ALL_SEND_APPEAL_BTNS,
+    BTN_SEND_APPEAL,
     get_language_display_name,
     get_text,
 )
@@ -113,7 +115,18 @@ async def handle_start_appeal(
     config: Settings,
 ) -> None:
     """Initiate appeal submission flow with rate-limit check and appeal type selection."""
-    user_lang = await db.get_user_language(message.from_user.id) or "uz"
+    stored_lang = await db.get_user_language(message.from_user.id)
+    if not stored_lang:
+        if message.text == BTN_SEND_APPEAL.get("ru"):
+            user_lang = "ru"
+            await db.set_user_language(message.from_user.id, "ru")
+        elif message.text == BTN_SEND_APPEAL.get("en"):
+            user_lang = "en"
+            await db.set_user_language(message.from_user.id, "en")
+        else:
+            user_lang = "uz"
+    else:
+        user_lang = stored_lang
 
     # Check anti-spam cooldown
     remaining_seconds = await db.get_rate_limit_remaining(
@@ -121,6 +134,7 @@ async def handle_start_appeal(
         cooldown_seconds=config.rate_limit_seconds,
     )
     if remaining_seconds > 0:
+        await state.clear()
         warning_text = get_text(
             "rate_limit_warning",
             lang=user_lang,
@@ -133,7 +147,8 @@ async def handle_start_appeal(
         )
         return
 
-    # Enter waiting for appeal type selection
+    # Clear previous state data and enter waiting for appeal type selection
+    await state.clear()
     await state.set_state(AppealStates.waiting_for_type)
     await message.answer(
         text=get_text("choose_appeal_type", lang=user_lang),
@@ -149,6 +164,10 @@ async def handle_choose_appeal_type(
     db: Database,
 ) -> None:
     """Handle student choice between anonymous and open appeal."""
+    if message.text in ALL_CANCEL_BTNS or (message.text and message.text.startswith("/cancel")):
+        await handle_cancel_appeal(message, state, db)
+        return
+
     if message.text in ALL_CHANGE_LANGUAGE_BTNS:
         await state.clear()
         user_lang = await db.get_user_language(message.from_user.id) or "uz"
@@ -171,7 +190,7 @@ async def handle_choose_appeal_type(
             parse_mode="HTML",
         )
     elif message.text in ALL_OPEN_BTNS:
-        await state.update_data(is_anonymous=False)
+        await state.update_data(is_anonymous=False, full_name=None, contact_info=None)
         await state.set_state(AppealStates.waiting_for_name)
         await message.answer(
             text=get_text("name_prompt", lang=user_lang),
@@ -194,6 +213,10 @@ async def handle_name_input(
     db: Database,
 ) -> None:
     """Handle student full name input for open appeal."""
+    if message.text in ALL_CANCEL_BTNS or (message.text and message.text.startswith("/cancel")):
+        await handle_cancel_appeal(message, state, db)
+        return
+
     if message.text in ALL_CHANGE_LANGUAGE_BTNS:
         await state.clear()
         user_lang = await db.get_user_language(message.from_user.id) or "uz"
@@ -207,7 +230,37 @@ async def handle_name_input(
 
     user_lang = await db.get_user_language(message.from_user.id) or "uz"
 
-    if not message.text or not message.text.strip():
+    # If student clicks Anonymous button during name input, switch directly to Anonymous
+    if message.text in ALL_ANONYMOUS_BTNS:
+        await state.update_data(is_anonymous=True, full_name=None, contact_info=None)
+        await state.set_state(AppealStates.waiting_for_appeal)
+        await message.answer(
+            text=get_text("appeal_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
+
+    # If student clicked Open button again, re-prompt for name
+    if message.text in ALL_OPEN_BTNS:
+        await message.answer(
+            text=get_text("name_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
+
+    name_text = None
+    if message.text and message.text.strip():
+        name_text = message.text.strip()
+    elif getattr(message, "contact", None):
+        first = getattr(message.contact, "first_name", "") or ""
+        last = getattr(message.contact, "last_name", "") or ""
+        combined = f"{first} {last}".strip()
+        if combined:
+            name_text = combined
+
+    if not name_text:
         await message.answer(
             text=get_text("invalid_name", lang=user_lang),
             reply_markup=get_cancel_reply_keyboard(lang=user_lang),
@@ -215,7 +268,7 @@ async def handle_name_input(
         )
         return
 
-    full_name = message.text.strip()
+    full_name = name_text[:150]
     await state.update_data(full_name=full_name)
     await state.set_state(AppealStates.waiting_for_contact)
     await message.answer(
@@ -232,6 +285,10 @@ async def handle_contact_input(
     db: Database,
 ) -> None:
     """Handle student contact info input for open appeal."""
+    if message.text in ALL_CANCEL_BTNS or (message.text and message.text.startswith("/cancel")):
+        await handle_cancel_appeal(message, state, db)
+        return
+
     if message.text in ALL_CHANGE_LANGUAGE_BTNS:
         await state.clear()
         user_lang = await db.get_user_language(message.from_user.id) or "uz"
@@ -244,6 +301,26 @@ async def handle_contact_input(
         return
 
     user_lang = await db.get_user_language(message.from_user.id) or "uz"
+
+    # If student clicks Anonymous button during contact input, switch directly to Anonymous
+    if message.text in ALL_ANONYMOUS_BTNS:
+        await state.update_data(is_anonymous=True, full_name=None, contact_info=None)
+        await state.set_state(AppealStates.waiting_for_appeal)
+        await message.answer(
+            text=get_text("appeal_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
+
+    # If student clicked Open button again, re-prompt for contact
+    if message.text in ALL_OPEN_BTNS:
+        await message.answer(
+            text=get_text("contact_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
 
     contact_text = None
     if message.text and message.text.strip():
@@ -259,13 +336,33 @@ async def handle_contact_input(
         )
         return
 
-    await state.update_data(contact_info=contact_text)
+    contact_info = contact_text[:150]
+    await state.update_data(contact_info=contact_info)
     await state.set_state(AppealStates.waiting_for_appeal)
     await message.answer(
         text=get_text("appeal_prompt", lang=user_lang),
         reply_markup=get_cancel_reply_keyboard(lang=user_lang),
         parse_mode="HTML",
     )
+
+
+async def _send_rector_header(bot: Bot, chat_id: int, thread_id: Optional[int], header: str) -> None:
+    """Safely deliver rector notification header, chunking if it exceeds message limit."""
+    if len(header) <= 4096:
+        await bot.send_message(
+            chat_id=chat_id,
+            message_thread_id=thread_id,
+            text=header,
+            parse_mode="HTML",
+        )
+    else:
+        for chunk in split_text_chunks(header, max_chunk_size=4000):
+            await bot.send_message(
+                chat_id=chat_id,
+                message_thread_id=thread_id,
+                text=chunk,
+                parse_mode="HTML",
+            )
 
 
 @router.message(StateFilter(AppealStates.waiting_for_appeal))
@@ -387,12 +484,7 @@ async def handle_appeal_content(
                     parse_mode="HTML",
                 )
             else:
-                await bot.send_message(
-                    chat_id=rector_chat_id,
-                    message_thread_id=thread_id,
-                    text=header,
-                    parse_mode="HTML",
-                )
+                await _send_rector_header(bot, rector_chat_id, thread_id, header)
                 for chunk in split_text_chunks(escape_html(album_caption)):
                     await bot.send_message(
                         chat_id=rector_chat_id,
@@ -430,12 +522,7 @@ async def handle_appeal_content(
                 )
             else:
                 # Text exceeds single message limit; send header then message chunks
-                await bot.send_message(
-                    chat_id=rector_chat_id,
-                    message_thread_id=thread_id,
-                    text=header,
-                    parse_mode="HTML",
-                )
+                await _send_rector_header(bot, rector_chat_id, thread_id, header)
                 for chunk in split_text_chunks(escape_html(message.text)):
                     await bot.send_message(
                         chat_id=rector_chat_id,
@@ -473,12 +560,7 @@ async def handle_appeal_content(
                         parse_mode="HTML",
                     )
                 else:
-                    await bot.send_message(
-                        chat_id=rector_chat_id,
-                        message_thread_id=thread_id,
-                        text=header,
-                        parse_mode="HTML",
-                    )
+                    await _send_rector_header(bot, rector_chat_id, thread_id, header)
                     for chunk in split_text_chunks(escape_html(student_caption)):
                         await bot.send_message(
                             chat_id=rector_chat_id,

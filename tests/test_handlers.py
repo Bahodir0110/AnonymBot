@@ -910,3 +910,126 @@ async def test_open_appeal_media_group_album(test_db, memory_storage, mock_confi
     assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in answered_msg.answer.call_args[1]["text"]
 
 
+@pytest.mark.asyncio
+async def test_long_name_and_contact_truncation(test_db, memory_storage, mock_config):
+    """Verify name and contact inputs > 150 chars are bounded to prevent header overflow / DoS."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9955
+    await test_db.set_user_language(user_id, "uz")
+
+    # Name input > 200 chars
+    await fsm.set_state(AppealStates.waiting_for_name)
+    super_long_name = "Abdurahmon " * 30  # ~330 chars
+    msg_name = make_mock_message(text=super_long_name, user_id=user_id)
+    await handle_name_input(msg_name, fsm, test_db)
+    data = await fsm.get_data()
+    assert len(data["full_name"]) == 150
+
+    # Contact input > 200 chars
+    await fsm.set_state(AppealStates.waiting_for_contact)
+    super_long_contact = "+998901234567 " * 20  # ~300 chars
+    msg_contact = make_mock_message(text=super_long_contact, user_id=user_id)
+    await handle_contact_input(msg_contact, fsm, test_db)
+    data = await fsm.get_data()
+    assert len(data["contact_info"]) == 150
+
+    # Submit content and ensure header delivers safely
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Qisqa matn", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+    assert mock_bot.send_message.called
+    sent_text = mock_bot.send_message.call_args[1]["text"]
+    assert "Qisqa matn" in sent_text
+    assert len(sent_text) < 4096
+
+
+@pytest.mark.asyncio
+async def test_contact_card_shared_at_name_step(test_db, memory_storage):
+    """Verify sharing Telegram contact card at the name step extracts full name."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9966
+    await test_db.set_user_language(user_id, "uz")
+    await fsm.set_state(AppealStates.waiting_for_name)
+
+    mock_contact = MagicMock()
+    mock_contact.first_name = "Dilshod"
+    mock_contact.last_name = "Karimov"
+    mock_contact.phone_number = "+998909876543"
+    msg = make_mock_message(text=None, contact=mock_contact, user_id=user_id)
+
+    await handle_name_input(msg, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_contact.state
+    data = await fsm.get_data()
+    assert data["full_name"] == "Dilshod Karimov"
+
+
+@pytest.mark.asyncio
+async def test_switch_to_anonymous_from_open_steps(test_db, memory_storage, mock_config):
+    """Verify student tapping Anonymous button while at name or contact prompt switches to anonymous flow."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9977
+    await test_db.set_user_language(user_id, "uz")
+
+    # Step 1: In waiting_for_name, taps Anonymous
+    await fsm.set_state(AppealStates.waiting_for_name)
+    await fsm.update_data(is_anonymous=False, full_name="Halfway User")
+    msg_switch = make_mock_message(text="🔒 Anonim", user_id=user_id)
+    await handle_name_input(msg_switch, fsm, test_db)
+
+    # Must transition to waiting_for_appeal with anonymous state
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    data = await fsm.get_data()
+    assert data["is_anonymous"] is True
+    assert data["full_name"] is None
+
+    # Submit appeal anonymously
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Fikr matni", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+    assert mock_bot.send_message.called
+    rector_header = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>Yangi anonim murojaat</b>" in rector_header
+    assert "Halfway User" not in rector_header
+
+
+@pytest.mark.asyncio
+async def test_cancel_button_direct_handling_in_all_flow_handlers(test_db, memory_storage):
+    """Verify direct calls to flow handlers with cancel button cleanly abort."""
+    for handler_fn, st in [
+        (handle_choose_appeal_type, AppealStates.waiting_for_type),
+        (handle_name_input, AppealStates.waiting_for_name),
+        (handle_contact_input, AppealStates.waiting_for_contact),
+    ]:
+        fsm = make_fsm_context(memory_storage)
+        await fsm.set_state(st)
+        user_id = 9988
+        await test_db.set_user_language(user_id, "ru")
+
+        msg_cancel = make_mock_message(text="❌ Отмена", user_id=user_id)
+        await handler_fn(msg_cancel, fsm, test_db)
+        assert await fsm.get_state() is None
+        assert "отменено" in msg_cancel.answer.call_args[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_auto_language_detection_from_appeal_button(test_db, memory_storage, mock_config):
+    """Verify user without saved language clicking Russian send appeal gets Russian type prompt."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9999
+
+    # User has no language in db initially
+    assert await test_db.get_user_language(user_id) is None
+
+    msg = make_mock_message(text="✉️ Отправить обращение", user_id=user_id)
+    await handle_start_appeal(msg, fsm, test_db, mock_config)
+
+    # State is waiting_for_type and prompt is in Russian
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    prompt_text = msg.answer.call_args[1]["text"]
+    assert "🔐 Выберите тип обращения:" in prompt_text
+
+    # Database language was automatically recorded as Russian
+    assert await test_db.get_user_language(user_id) == "ru"
+
+
+
