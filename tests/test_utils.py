@@ -47,16 +47,81 @@ def test_get_tashkent_now():
 
 
 def test_build_rector_header():
-    """Verify rector notification header format."""
-    header = build_rector_header(
+    """Verify rector notification header format for anonymous appeals."""
+    header_uz = build_rector_header(
         reference_id="#TT-0001",
         timestamp_str="2026-09-22 14:15:00 (UTC+5)",
         language_name="O'zbekcha",
+        is_anonymous=True,
+        language_code="uz",
     )
-    assert "Tash Tech — Anonim Murojaat" in header
-    assert "#TT-0001" in header
-    assert "2026-09-22 14:15:00 (UTC+5)" in header
-    assert "O'zbekcha" in header
+    assert "📬 <b>Yangi anonim murojaat</b>" in header_uz
+    assert "🆔 <b>Murojaat ID:</b> <code>#TT-0001</code>" in header_uz
+    assert "🔒 <b>Turi:</b> Anonim" in header_uz
+    assert "📅 <b>Sana:</b> 2026-09-22 14:15:00 (UTC+5)" in header_uz
+    assert "🌐 <b>Til:</b> O'zbekcha" in header_uz
+
+    header_ru = build_rector_header(
+        reference_id="#TT-0002",
+        timestamp_str="2026-09-22 14:15:00 (UTC+5)",
+        language_name="Русский",
+        is_anonymous=True,
+        language_code="ru",
+    )
+    assert "📬 <b>Новое анонимное обращение</b>" in header_ru
+
+    header_en = build_rector_header(
+        reference_id="#TT-0003",
+        timestamp_str="2026-09-22 14:15:00 (UTC+5)",
+        language_name="English",
+        is_anonymous=True,
+        language_code="en",
+    )
+    assert "📬 <b>New Anonymous Appeal</b>" in header_en
+
+
+def test_build_rector_header_open():
+    """Verify rector notification header format for open appeals."""
+    header_uz = build_rector_header(
+        reference_id="#TT-0005",
+        timestamp_str="2026-09-22 14:15:00 (UTC+5)",
+        language_name="O'zbekcha",
+        is_anonymous=False,
+        full_name="Alisher Navoiy",
+        contact_info="+998901234567",
+        language_code="uz",
+    )
+    assert "📬 <b>Yangi ochiq murojaat</b>" in header_uz
+    assert "🆔 <b>Murojaat ID:</b> <code>#TT-0005</code>" in header_uz
+    assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in header_uz
+    assert "👤 <b>Talaba / F.I.Sh.:</b> Alisher Navoiy" in header_uz
+    assert "📞 <b>Aloqa:</b> +998901234567" in header_uz
+    assert "📅 <b>Sana:</b> 2026-09-22 14:15:00 (UTC+5)" in header_uz
+    assert "🌐 <b>Til:</b> O'zbekcha" in header_uz
+
+    header_ru = build_rector_header(
+        reference_id="#TT-0006",
+        timestamp_str="2026-09-22 14:15:00 (UTC+5)",
+        language_name="Русский",
+        is_anonymous=False,
+        full_name="Иван Иванов",
+        contact_info="ivan@example.com",
+        language_code="ru",
+    )
+    assert "📬 <b>Новое открытое обращение</b>" in header_ru
+    assert "Иван Иванов" in header_ru
+    assert "ivan@example.com" in header_ru
+
+    header_en = build_rector_header(
+        reference_id="#TT-0007",
+        timestamp_str="2026-09-22 14:15:00 (UTC+5)",
+        language_name="English",
+        is_anonymous=False,
+        full_name="John Doe",
+        contact_info="+1234567890",
+        language_code="en",
+    )
+    assert "📬 <b>New Open Appeal</b>" in header_en
 
 
 def test_split_text_chunks():

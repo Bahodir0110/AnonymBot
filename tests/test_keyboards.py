@@ -1,6 +1,7 @@
 """Unit tests for bot keyboards."""
 
 from bot.keyboards import (
+    get_appeal_type_reply_keyboard,
     get_cancel_reply_keyboard,
     get_language_inline_keyboard,
     get_main_reply_keyboard,
@@ -51,3 +52,24 @@ def test_cancel_reply_keyboard():
         assert len(buttons) == 1
         assert expected_word in buttons[0]
         assert kb.resize_keyboard is True
+
+
+def test_appeal_type_reply_keyboard():
+    """Verify appeal type reply keyboard has Anonymous, Open, and Cancel buttons."""
+    # UZ
+    kb_uz = get_appeal_type_reply_keyboard(lang="uz")
+    assert len(kb_uz.keyboard) == 2
+    assert [btn.text for btn in kb_uz.keyboard[0]] == ["🔒 Anonim", "🔓 Ochiq"]
+    assert [btn.text for btn in kb_uz.keyboard[1]] == ["❌ Bekor qilish"]
+
+    # RU
+    kb_ru = get_appeal_type_reply_keyboard(lang="ru")
+    assert len(kb_ru.keyboard) == 2
+    assert [btn.text for btn in kb_ru.keyboard[0]] == ["🔒 Анонимно", "🔓 Открыто"]
+    assert [btn.text for btn in kb_ru.keyboard[1]] == ["❌ Отмена"]
+
+    # EN
+    kb_en = get_appeal_type_reply_keyboard(lang="en")
+    assert len(kb_en.keyboard) == 2
+    assert [btn.text for btn in kb_en.keyboard[0]] == ["🔒 Anonymous", "🔓 Open"]
+    assert [btn.text for btn in kb_en.keyboard[1]] == ["❌ Cancel"]

@@ -10,10 +10,16 @@ from aiogram.types import Message
 
 from bot.config import Settings
 from bot.database import Database
-from bot.keyboards import get_cancel_reply_keyboard, get_main_reply_keyboard
+from bot.keyboards import (
+    get_appeal_type_reply_keyboard,
+    get_cancel_reply_keyboard,
+    get_main_reply_keyboard,
+)
 from bot.locales import (
+    ALL_ANONYMOUS_BTNS,
     ALL_CANCEL_BTNS,
     ALL_CHANGE_LANGUAGE_BTNS,
+    ALL_OPEN_BTNS,
     ALL_SEND_APPEAL_BTNS,
     get_language_display_name,
     get_text,
@@ -84,8 +90,8 @@ def detect_content_type(message: Message) -> Optional[str]:
     return None
 
 
-@router.message(F.text.in_(ALL_CANCEL_BTNS))
-@router.message(Command("cancel"))
+@router.message(StateFilter("*"), F.text.in_(ALL_CANCEL_BTNS))
+@router.message(StateFilter("*"), Command("cancel"))
 async def handle_cancel_appeal(message: Message, state: FSMContext, db: Database) -> None:
     """Abort writing appeal and return student to main menu."""
     await state.clear()
@@ -106,7 +112,7 @@ async def handle_start_appeal(
     db: Database,
     config: Settings,
 ) -> None:
-    """Initiate appeal submission flow with rate-limit check."""
+    """Initiate appeal submission flow with rate-limit check and appeal type selection."""
     user_lang = await db.get_user_language(message.from_user.id) or "uz"
 
     # Check anti-spam cooldown
@@ -127,7 +133,133 @@ async def handle_start_appeal(
         )
         return
 
-    # Enter waiting for appeal state
+    # Enter waiting for appeal type selection
+    await state.set_state(AppealStates.waiting_for_type)
+    await message.answer(
+        text=get_text("choose_appeal_type", lang=user_lang),
+        reply_markup=get_appeal_type_reply_keyboard(lang=user_lang),
+        parse_mode="HTML",
+    )
+
+
+@router.message(StateFilter(AppealStates.waiting_for_type))
+async def handle_choose_appeal_type(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    """Handle student choice between anonymous and open appeal."""
+    if message.text in ALL_CHANGE_LANGUAGE_BTNS:
+        await state.clear()
+        user_lang = await db.get_user_language(message.from_user.id) or "uz"
+        from bot.keyboards import get_language_inline_keyboard
+        await message.answer(
+            text=get_text("choose_language", lang=user_lang),
+            reply_markup=get_language_inline_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    user_lang = await db.get_user_language(message.from_user.id) or "uz"
+
+    if message.text in ALL_ANONYMOUS_BTNS:
+        await state.update_data(is_anonymous=True, full_name=None, contact_info=None)
+        await state.set_state(AppealStates.waiting_for_appeal)
+        await message.answer(
+            text=get_text("appeal_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+    elif message.text in ALL_OPEN_BTNS:
+        await state.update_data(is_anonymous=False)
+        await state.set_state(AppealStates.waiting_for_name)
+        await message.answer(
+            text=get_text("name_prompt", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+    else:
+        # Prompt again if unrecognized option
+        await message.answer(
+            text=get_text("choose_appeal_type", lang=user_lang),
+            reply_markup=get_appeal_type_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+
+
+@router.message(StateFilter(AppealStates.waiting_for_name))
+async def handle_name_input(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    """Handle student full name input for open appeal."""
+    if message.text in ALL_CHANGE_LANGUAGE_BTNS:
+        await state.clear()
+        user_lang = await db.get_user_language(message.from_user.id) or "uz"
+        from bot.keyboards import get_language_inline_keyboard
+        await message.answer(
+            text=get_text("choose_language", lang=user_lang),
+            reply_markup=get_language_inline_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    user_lang = await db.get_user_language(message.from_user.id) or "uz"
+
+    if not message.text or not message.text.strip():
+        await message.answer(
+            text=get_text("invalid_name", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
+
+    full_name = message.text.strip()
+    await state.update_data(full_name=full_name)
+    await state.set_state(AppealStates.waiting_for_contact)
+    await message.answer(
+        text=get_text("contact_prompt", lang=user_lang),
+        reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+        parse_mode="HTML",
+    )
+
+
+@router.message(StateFilter(AppealStates.waiting_for_contact))
+async def handle_contact_input(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    """Handle student contact info input for open appeal."""
+    if message.text in ALL_CHANGE_LANGUAGE_BTNS:
+        await state.clear()
+        user_lang = await db.get_user_language(message.from_user.id) or "uz"
+        from bot.keyboards import get_language_inline_keyboard
+        await message.answer(
+            text=get_text("choose_language", lang=user_lang),
+            reply_markup=get_language_inline_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    user_lang = await db.get_user_language(message.from_user.id) or "uz"
+
+    contact_text = None
+    if message.text and message.text.strip():
+        contact_text = message.text.strip()
+    elif getattr(message, "contact", None) and getattr(message.contact, "phone_number", None):
+        contact_text = message.contact.phone_number
+
+    if not contact_text:
+        await message.answer(
+            text=get_text("invalid_contact", lang=user_lang),
+            reply_markup=get_cancel_reply_keyboard(lang=user_lang),
+            parse_mode="HTML",
+        )
+        return
+
+    await state.update_data(contact_info=contact_text)
     await state.set_state(AppealStates.waiting_for_appeal)
     await message.answer(
         text=get_text("appeal_prompt", lang=user_lang),
@@ -201,10 +333,19 @@ async def handle_appeal_content(
     is_album = len(messages) > 1
     recorded_content_type = "album" if is_album else content_type
 
+    # Retrieve appeal type and contact details if open appeal
+    fsm_data = await state.get_data()
+    is_anonymous = fsm_data.get("is_anonymous", True)
+    full_name = fsm_data.get("full_name")
+    contact_info = fsm_data.get("contact_info")
+
     # Create appeal record in DB and obtain sequential reference ID (e.g. #TT-0001)
     appeal_id, ref_code = await db.create_appeal(
         language_code=user_lang,
         content_type=recorded_content_type,
+        is_anonymous=is_anonymous,
+        full_name=full_name,
+        contact_info=contact_info,
     )
 
     # Update cooldown timestamp for student
@@ -220,6 +361,10 @@ async def handle_appeal_content(
         reference_id=ref_code,
         timestamp_str=timestamp_str,
         language_name=lang_name,
+        is_anonymous=is_anonymous,
+        full_name=full_name,
+        contact_info=contact_info,
+        language_code=user_lang,
     )
 
     # Deliver to Rector chat ID (and optional thread/topic)
@@ -350,10 +495,14 @@ async def handle_appeal_content(
                     caption="",
                 )
 
-        logger.info("Delivered appeal %s (type: %s) to Rector chat %s", ref_code, recorded_content_type, rector_chat_id)
+        logger.info("Delivered appeal %s (type: %s, anon: %s) to Rector chat %s", ref_code, recorded_content_type, is_anonymous, rector_chat_id)
 
         # Send confirmation to student matching UI requirement
-        confirmation_msg = get_text("appeal_submitted", lang=user_lang)
+        if is_anonymous:
+            confirmation_msg = get_text("appeal_submitted_anonymous", lang=user_lang)
+        else:
+            confirmation_msg = get_text("appeal_submitted_open", lang=user_lang)
+
         await message.answer(
             text=confirmation_msg,
             reply_markup=get_main_reply_keyboard(lang=user_lang),

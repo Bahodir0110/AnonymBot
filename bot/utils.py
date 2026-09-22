@@ -2,7 +2,7 @@
 
 import html
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Optional
 
 try:
     from zoneinfo import ZoneInfo
@@ -45,14 +45,46 @@ def escape_html(text: str) -> str:
     return html.escape(text, quote=False)
 
 
-def build_rector_header(reference_id: str, timestamp_str: str, language_name: str) -> str:
+def build_rector_header(
+    reference_id: str,
+    timestamp_str: str,
+    language_name: str,
+    is_anonymous: bool = True,
+    full_name: Optional[str] = None,
+    contact_info: Optional[str] = None,
+    language_code: str = "uz",
+) -> str:
     """Construct standard notification header for Rector delivery."""
-    return (
-        "🏛 <b>Tash Tech — Anonim Murojaat</b>\n"
-        f"🆔 <b>ID:</b> <code>{escape_html(reference_id)}</code>\n"
-        f"🕒 <b>Vaqt:</b> {escape_html(timestamp_str)}\n"
-        f"🌐 <b>Til:</b> {escape_html(language_name)}"
-    )
+    if is_anonymous:
+        title_map = {
+            "uz": "📬 <b>Yangi anonim murojaat</b>",
+            "ru": "📬 <b>Новое анонимное обращение</b>",
+            "en": "📬 <b>New Anonymous Appeal</b>",
+        }
+        title = title_map.get(language_code, title_map["uz"])
+        return (
+            f"{title}\n"
+            f"🆔 <b>Murojaat ID:</b> <code>{escape_html(reference_id)}</code>\n"
+            "🔒 <b>Turi:</b> Anonim\n"
+            f"📅 <b>Sana:</b> {escape_html(timestamp_str)}\n"
+            f"🌐 <b>Til:</b> {escape_html(language_name)}"
+        )
+    else:
+        title_map = {
+            "uz": "📬 <b>Yangi ochiq murojaat</b>",
+            "ru": "📬 <b>Новое открытое обращение</b>",
+            "en": "📬 <b>New Open Appeal</b>",
+        }
+        title = title_map.get(language_code, title_map["uz"])
+        return (
+            f"{title}\n"
+            f"🆔 <b>Murojaat ID:</b> <code>{escape_html(reference_id)}</code>\n"
+            "🔓 <b>Turi:</b> Ochiq (Oshkora)\n"
+            f"👤 <b>Talaba / F.I.Sh.:</b> {escape_html(full_name or '')}\n"
+            f"📞 <b>Aloqa:</b> {escape_html(contact_info or '')}\n"
+            f"📅 <b>Sana:</b> {escape_html(timestamp_str)}\n"
+            f"🌐 <b>Til:</b> {escape_html(language_name)}"
+        )
 
 
 def split_text_chunks(text: str, max_chunk_size: int = 4000) -> List[str]:

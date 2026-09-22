@@ -7,8 +7,10 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from bot.locales import (
+    BTN_ANONYMOUS,
     BTN_CANCEL,
     BTN_CHANGE_LANGUAGE,
+    BTN_OPEN,
     BTN_SEND_APPEAL,
 )
 
@@ -58,6 +60,23 @@ def get_cancel_reply_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
 
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text=cancel_btn)],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+    )
+    return keyboard
+
+
+def get_appeal_type_reply_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
+    """Return reply keyboard to choose appeal type (Anonymous vs Open) or Cancel."""
+    anon_btn = BTN_ANONYMOUS.get(lang, BTN_ANONYMOUS["uz"])
+    open_btn = BTN_OPEN.get(lang, BTN_OPEN["uz"])
+    cancel_btn = BTN_CANCEL.get(lang, BTN_CANCEL["uz"])
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=anon_btn), KeyboardButton(text=open_btn)],
             [KeyboardButton(text=cancel_btn)],
         ],
         resize_keyboard=True,

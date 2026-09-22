@@ -84,9 +84,87 @@ async def test_database_anonymity_schema(temp_db):
     assert "reference_code" in columns
     assert "language_code" in columns
     assert "content_type" in columns
+    assert "is_anonymous" in columns
+    assert "full_name" in columns
+    assert "contact_info" in columns
     assert "created_at" in columns
 
-    # Strict anonymity check: user_id must NOT be stored in appeals
+    # Strict check: telegram user_id must NOT be stored in appeals
     assert "user_id" not in columns
     assert "student_id" not in columns
     assert "sender_id" not in columns
+
+
+@pytest.mark.asyncio
+async def test_open_appeal_storage(temp_db):
+    """Verify storing open appeal records with student name and contact details."""
+    aid, ref = await temp_db.create_appeal(
+        language_code="uz",
+        content_type="text",
+        is_anonymous=False,
+        full_name="Bobur Mirzo",
+        contact_info="+998901234567",
+    )
+    assert aid == 1
+    assert ref == "#TT-0001"
+
+    row = await temp_db.get_appeal(aid)
+    assert row is not None
+    assert row["is_anonymous"] == 0
+    assert row["full_name"] == "Bobur Mirzo"
+    assert row["contact_info"] == "+998901234567"
+
+    # Anonymous appeal
+    aid2, ref2 = await temp_db.create_appeal(
+        language_code="ru",
+        content_type="photo",
+        is_anonymous=True,
+    )
+    row2 = await temp_db.get_appeal(aid2)
+    assert row2 is not None
+    assert row2["is_anonymous"] == 1
+    assert row2["full_name"] is None
+    assert row2["contact_info"] is None
+
+
+@pytest.mark.asyncio
+async def test_database_safe_migration(tmp_path):
+    """Verify that existing database tables without is_anonymous/full_name/contact_info are safely migrated."""
+    old_db_file = tmp_path / "old_bot.db"
+
+    # Create old schema table without the new columns
+    async with aiosqlite.connect(str(old_db_file)) as conn:
+        await conn.execute(
+            """
+            CREATE TABLE appeals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reference_code TEXT NOT NULL,
+                language_code TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        await conn.execute(
+            "INSERT INTO appeals (reference_code, language_code, content_type) VALUES ('#TT-0001', 'uz', 'text');"
+        )
+        await conn.commit()
+
+    # Now init using our Database class
+    migrated_db = Database(str(old_db_file))
+    await migrated_db.init()
+
+    # Verify columns were added
+    async with aiosqlite.connect(str(old_db_file)) as conn:
+        async with conn.execute("PRAGMA table_info(appeals);") as cursor:
+            cols = [r[1] for r in await cursor.fetchall()]
+
+    assert "is_anonymous" in cols
+    assert "full_name" in cols
+    assert "contact_info" in cols
+
+    # Verify old data survived
+    old_row = await migrated_db.get_appeal(1)
+    assert old_row is not None
+    assert old_row["reference_code"] == "#TT-0001"
+    assert old_row["is_anonymous"] == 1

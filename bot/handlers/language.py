@@ -1,7 +1,7 @@
 """Handlers for language selection and language changing."""
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -17,8 +17,8 @@ router = Router(name="language_router")
 router.message.filter(F.chat.type == "private")
 
 
-@router.message(F.text.in_(ALL_CHANGE_LANGUAGE_BTNS))
-@router.message(Command("language", "lang"))
+@router.message(StateFilter("*"), F.text.in_(ALL_CHANGE_LANGUAGE_BTNS))
+@router.message(StateFilter("*"), Command("language", "lang"))
 async def handle_change_language_button(message: Message, state: FSMContext, db: Database) -> None:
     """Handle reply keyboard button or command to change language."""
     await state.clear()

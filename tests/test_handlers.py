@@ -12,6 +12,9 @@ from bot.database import Database
 from bot.handlers.appeal import (
     handle_appeal_content,
     handle_cancel_appeal,
+    handle_choose_appeal_type,
+    handle_contact_input,
+    handle_name_input,
     handle_start_appeal,
     handle_unhandled_message,
     media_group_collector,
@@ -60,6 +63,7 @@ def make_mock_message(
     caption=None,
     media_group_id=None,
     animation=None,
+    contact=None,
     chat_type="private",
 ):
     msg = AsyncMock(spec=Message)
@@ -73,6 +77,7 @@ def make_mock_message(
     msg.audio = None
     msg.video_note = None
     msg.animation = animation
+    msg.contact = contact
     msg.media_group_id = media_group_id
 
     user = User(id=user_id, is_bot=False, first_name="Student", username="student123")
@@ -127,9 +132,9 @@ async def test_appeal_start_and_cancel(test_db, memory_storage, mock_config):
     msg_start = make_mock_message(text="✉️ Murojaat yuborish")
     await handle_start_appeal(message=msg_start, state=fsm, db=test_db, config=mock_config)
 
-    # Should enter waiting_for_appeal state
-    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
-    assert "Murojaatingizni yozing" in msg_start.answer.call_args[1]["text"]
+    # Should enter waiting_for_type state
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    assert "Murojaat turini tanlang" in msg_start.answer.call_args[1]["text"]
 
     # Step 2: User presses Cancel
     msg_cancel = make_mock_message(text="❌ Bekor qilish")
@@ -145,6 +150,7 @@ async def test_appeal_submission_text(test_db, memory_storage, mock_config):
     """Test submitting text appeal forwards anonymously to Rector with correct header."""
     fsm = make_fsm_context(memory_storage)
     await fsm.set_state(AppealStates.waiting_for_appeal)
+    await fsm.update_data(is_anonymous=True)
     await test_db.set_user_language(12345, "uz")
 
     mock_bot = AsyncMock()
@@ -170,7 +176,8 @@ async def test_appeal_submission_text(test_db, memory_storage, mock_config):
 
     # Header checks
     assert "#TT-0001" in rector_text
-    assert "Tash Tech — Anonim Murojaat" in rector_text
+    assert "📬 <b>Yangi anonim murojaat</b>" in rector_text
+    assert "🔒 <b>Turi:</b> Anonim" in rector_text
     assert "(UTC+5)" in rector_text
     assert "O'zbekcha" in rector_text
     assert "isitish tizimi ishlamayapti" in rector_text
@@ -518,5 +525,388 @@ async def test_photo_with_extreme_long_caption(test_db, memory_storage, mock_con
     # Media must be copied with empty caption
     assert mock_bot.copy_message.called
     assert mock_bot.copy_message.call_args[1]["caption"] == ""
+
+
+@pytest.mark.asyncio
+async def test_anonymous_flow_complete(test_db, memory_storage, mock_config):
+    """Test full flow: start -> choose anonymous -> write appeal -> anonymous delivery to rector."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 7771
+    await test_db.set_user_language(user_id, "uz")
+
+    # Step 1: Start appeal
+    msg_start = make_mock_message(text="✉️ Murojaat yuborish", user_id=user_id)
+    await handle_start_appeal(msg_start, fsm, test_db, mock_config)
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    assert "🔐 Murojaat turini tanlang:" in msg_start.answer.call_args[1]["text"]
+
+    # Step 2: Choose Anonymous
+    msg_type = make_mock_message(text="🔒 Anonim", user_id=user_id)
+    await handle_choose_appeal_type(msg_type, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    assert "✍️ Murojaatingizni yozing:" in msg_type.answer.call_args[1]["text"]
+
+    # Step 3: Submit appeal content
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Anonim taklif matni.", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.send_message.called
+    rector_text = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>Yangi anonim murojaat</b>" in rector_text
+    assert "🔒 <b>Turi:</b> Anonim" in rector_text
+    assert "Anonim taklif matni." in rector_text
+    assert "Talaba / F.I.Sh." not in rector_text
+
+    # Student confirmation
+    student_confirm = msg_content.answer.call_args[1]["text"]
+    assert "✅ Rahmat! Murojaatingiz yuborildi." in student_confirm
+    assert "🔒 Anonim murojaat — javob va holat kuzatilmaydi." in student_confirm
+
+    # DB verify
+    appeal = await test_db.get_appeal(1)
+    assert appeal["is_anonymous"] == 1
+    assert appeal["full_name"] is None
+    assert appeal["contact_info"] is None
+
+
+@pytest.mark.asyncio
+async def test_open_flow_complete_uz(test_db, memory_storage, mock_config):
+    """Test full flow for open appeal in Uzbek: start -> choose open -> name -> contact -> write appeal."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 7772
+    await test_db.set_user_language(user_id, "uz")
+
+    # Step 1: Start appeal
+    msg_start = make_mock_message(text="✉️ Murojaat yuborish", user_id=user_id)
+    await handle_start_appeal(msg_start, fsm, test_db, mock_config)
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+
+    # Step 2: Choose Open
+    msg_type = make_mock_message(text="🔓 Ochiq", user_id=user_id)
+    await handle_choose_appeal_type(msg_type, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_name.state
+    assert "👤 Ism-familiyangizni kiriting:" in msg_type.answer.call_args[1]["text"]
+
+    # Step 3: Enter Full Name
+    msg_name = make_mock_message(text="Anvar Qodirov", user_id=user_id)
+    await handle_name_input(msg_name, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_contact.state
+    assert "📞 Bog'lanish uchun kontakt" in msg_name.answer.call_args[1]["text"]
+
+    # Step 4: Enter Contact Info
+    msg_contact = make_mock_message(text="+998901112233", user_id=user_id)
+    await handle_contact_input(msg_contact, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    assert "✍️ Murojaatingizni yozing:" in msg_contact.answer.call_args[1]["text"]
+
+    # Step 5: Submit Appeal Content
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Kutubxonada yangi kitoblar kerak.", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.send_message.called
+    rector_text = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>Yangi ochiq murojaat</b>" in rector_text
+    assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in rector_text
+    assert "👤 <b>Talaba / F.I.Sh.:</b> Anvar Qodirov" in rector_text
+    assert "📞 <b>Aloqa:</b> +998901112233" in rector_text
+    assert "Kutubxonada yangi kitoblar kerak." in rector_text
+
+    # Student confirmation
+    student_confirm = msg_content.answer.call_args[1]["text"]
+    assert "✅ Rahmat! Murojaatingiz yuborildi." in student_confirm
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in student_confirm
+
+    # DB record
+    appeal = await test_db.get_appeal(1)
+    assert appeal["is_anonymous"] == 0
+    assert appeal["full_name"] == "Anvar Qodirov"
+    assert appeal["contact_info"] == "+998901112233"
+
+
+@pytest.mark.asyncio
+async def test_open_flow_complete_ru(test_db, memory_storage, mock_config):
+    """Test full flow for open appeal in Russian."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 7773
+    await test_db.set_user_language(user_id, "ru")
+
+    # Step 1: Start appeal
+    msg_start = make_mock_message(text="✉️ Отправить обращение", user_id=user_id)
+    await handle_start_appeal(msg_start, fsm, test_db, mock_config)
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    assert "🔐 Выберите тип обращения:" in msg_start.answer.call_args[1]["text"]
+
+    # Step 2: Choose Open
+    msg_type = make_mock_message(text="🔓 Открыто", user_id=user_id)
+    await handle_choose_appeal_type(msg_type, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_name.state
+    assert "👤 Как вас зовут?" in msg_type.answer.call_args[1]["text"]
+
+    # Step 3: Enter Name
+    msg_name = make_mock_message(text="Алексей Смирнов", user_id=user_id)
+    await handle_name_input(msg_name, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_contact.state
+    assert "📞 Укажите контакт для связи" in msg_name.answer.call_args[1]["text"]
+
+    # Step 4: Enter Contact
+    msg_contact = make_mock_message(text="alex@example.com", user_id=user_id)
+    await handle_contact_input(msg_contact, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    assert "✍️ Опишите ваше обращение:" in msg_contact.answer.call_args[1]["text"]
+
+    # Step 5: Submit Appeal
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Вопрос по общежитию.", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.send_message.called
+    rector_text = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>Новое открытое обращение</b>" in rector_text
+    assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in rector_text
+    assert "👤 <b>Talaba / F.I.Sh.:</b> Алексей Смирнов" in rector_text
+    assert "📞 <b>Aloqa:</b> alex@example.com" in rector_text
+
+    student_confirm = msg_content.answer.call_args[1]["text"]
+    assert "✅ Спасибо! Ваше обращение отправлено." in student_confirm
+    assert "🔓 Открытое обращение — ваши данные переданы ректору." in student_confirm
+
+
+@pytest.mark.asyncio
+async def test_open_flow_complete_en(test_db, memory_storage, mock_config):
+    """Test full flow for open appeal in English."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 7774
+    await test_db.set_user_language(user_id, "en")
+
+    # Step 1: Start appeal
+    msg_start = make_mock_message(text="✉️ Send appeal", user_id=user_id)
+    await handle_start_appeal(msg_start, fsm, test_db, mock_config)
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    assert "🔐 Choose appeal type:" in msg_start.answer.call_args[1]["text"]
+
+    # Step 2: Choose Open
+    msg_type = make_mock_message(text="🔓 Open", user_id=user_id)
+    await handle_choose_appeal_type(msg_type, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_name.state
+    assert "👤 What is your full name?" in msg_type.answer.call_args[1]["text"]
+
+    # Step 3: Enter Name
+    msg_name = make_mock_message(text="Alice Smith", user_id=user_id)
+    await handle_name_input(msg_name, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_contact.state
+    assert "📞 Enter contact info" in msg_name.answer.call_args[1]["text"]
+
+    # Step 4: Enter Contact
+    msg_contact = make_mock_message(text="+1234567890", user_id=user_id)
+    await handle_contact_input(msg_contact, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    assert "✍️ Write your appeal:" in msg_contact.answer.call_args[1]["text"]
+
+    # Step 5: Submit Appeal
+    mock_bot = AsyncMock()
+    msg_content = make_mock_message(text="Request for cafeteria improvements.", user_id=user_id)
+    await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.send_message.called
+    rector_text = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>New Open Appeal</b>" in rector_text
+    assert "Alice Smith" in rector_text
+    assert "+1234567890" in rector_text
+
+    student_confirm = msg_content.answer.call_args[1]["text"]
+    assert "✅ Thank you! Your appeal has been sent." in student_confirm
+    assert "🔓 Open appeal — your contact details were delivered to the rector." in student_confirm
+
+
+@pytest.mark.asyncio
+async def test_open_appeal_with_photo(test_db, memory_storage, mock_config):
+    """Test submitting open appeal with photo attachment includes student identity in caption."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 7775
+    await test_db.set_user_language(user_id, "uz")
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await fsm.update_data(is_anonymous=False, full_name="Sardor Aliyev", contact_info="+998991234567")
+
+    mock_bot = AsyncMock()
+    photo_mock = [PhotoSize(file_id="photo999", file_unique_id="u999", width=800, height=600)]
+    msg = make_mock_message(photo=photo_mock, caption="Bino fotosi", user_id=user_id)
+
+    await handle_appeal_content(msg, fsm, mock_bot, test_db, mock_config)
+
+    assert await fsm.get_state() is None
+    assert mock_bot.copy_message.called
+    caption = mock_bot.copy_message.call_args[1]["caption"]
+    assert "📬 <b>Yangi ochiq murojaat</b>" in caption
+    assert "Sardor Aliyev" in caption
+    assert "+998991234567" in caption
+    assert "Bino fotosi" in caption
+
+    student_reply = msg.answer.call_args[1]["text"]
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in student_reply
+
+
+@pytest.mark.asyncio
+async def test_cancel_at_each_state(test_db, memory_storage):
+    """Verify cancel button clears state from waiting_for_type, waiting_for_name, and waiting_for_contact."""
+    states_to_test = [
+        AppealStates.waiting_for_type,
+        AppealStates.waiting_for_name,
+        AppealStates.waiting_for_contact,
+        AppealStates.waiting_for_appeal,
+    ]
+    for st in states_to_test:
+        fsm = make_fsm_context(memory_storage)
+        await fsm.set_state(st)
+        msg_cancel = make_mock_message(text="❌ Bekor qilish")
+        await handle_cancel_appeal(msg_cancel, fsm, test_db)
+        assert await fsm.get_state() is None
+        assert "bekor qilindi" in msg_cancel.answer.call_args[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_inputs_in_open_flow(test_db, memory_storage):
+    """Verify validation when user submits invalid name or contact info."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 8888
+    await test_db.set_user_language(user_id, "uz")
+
+    # Invalid name (empty or whitespace)
+    await fsm.set_state(AppealStates.waiting_for_name)
+    msg_empty_name = make_mock_message(text="   ", user_id=user_id)
+    await handle_name_input(msg_empty_name, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_name.state
+    assert "ism-familiyangizni matn ko'rinishida kiriting" in msg_empty_name.answer.call_args[1]["text"]
+
+    # Invalid contact (empty)
+    await fsm.set_state(AppealStates.waiting_for_contact)
+    msg_empty_contact = make_mock_message(text="   ", user_id=user_id)
+    await handle_contact_input(msg_empty_contact, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_contact.state
+    assert "bog'lanish kontaktini matn ko'rinishida kiriting" in msg_empty_contact.answer.call_args[1]["text"]
+
+    # Invalid appeal type selection
+    await fsm.set_state(AppealStates.waiting_for_type)
+    msg_invalid_type = make_mock_message(text="Tasodifiy javob", user_id=user_id)
+    await handle_choose_appeal_type(msg_invalid_type, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_type.state
+    assert "🔐 Murojaat turini tanlang:" in msg_invalid_type.answer.call_args[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cross_appeal_type_rate_limiting(test_db, memory_storage, mock_config):
+    """Verify cooldown applies across appeal types: submitting open blocks anonymous and vice versa."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9911
+    await test_db.set_user_language(user_id, "uz")
+
+    # Flow 1: Submit Open appeal
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await fsm.update_data(is_anonymous=False, full_name="Vali Aliyev", contact_info="+998901234567")
+    mock_bot = AsyncMock()
+    msg1 = make_mock_message(text="Ochiq murojaat", user_id=user_id)
+    await handle_appeal_content(msg1, fsm, mock_bot, test_db, mock_config)
+
+    # State cleared
+    assert await fsm.get_state() is None
+
+    # Immediate attempt to start Anonymous appeal must be blocked by rate limit
+    msg2 = make_mock_message(text="✉️ Murojaat yuborish", user_id=user_id)
+    await handle_start_appeal(msg2, fsm, test_db, mock_config)
+    assert await fsm.get_state() is None
+    assert "⏳ Iltimos, keyingi murojaatni yuborishdan oldin" in msg2.answer.call_args[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_contact_share_input(test_db, memory_storage):
+    """Verify student can provide contact info via Telegram contact card."""
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9922
+    await test_db.set_user_language(user_id, "uz")
+    await fsm.set_state(AppealStates.waiting_for_contact)
+
+    mock_contact = MagicMock()
+    mock_contact.phone_number = "+998939998877"
+    msg = make_mock_message(text=None, contact=mock_contact, user_id=user_id)
+
+    await handle_contact_input(msg, fsm, test_db)
+    assert await fsm.get_state() == AppealStates.waiting_for_appeal.state
+    data = await fsm.get_data()
+    assert data["contact_info"] == "+998939998877"
+
+
+@pytest.mark.asyncio
+async def test_change_language_shortcuts_in_all_states(test_db, memory_storage):
+    """Verify pressing change language from any appeal state clears state and prompts language selection."""
+    for st in [AppealStates.waiting_for_type, AppealStates.waiting_for_name, AppealStates.waiting_for_contact]:
+        fsm = make_fsm_context(memory_storage)
+        await fsm.set_state(st)
+        user_id = 9933
+        await test_db.set_user_language(user_id, "uz")
+
+        msg_lang = make_mock_message(text="🌐 Tilni o'zgartirish", user_id=user_id)
+        if st == AppealStates.waiting_for_type:
+            await handle_choose_appeal_type(msg_lang, fsm, test_db)
+        elif st == AppealStates.waiting_for_name:
+            await handle_name_input(msg_lang, fsm, test_db)
+        elif st == AppealStates.waiting_for_contact:
+            await handle_contact_input(msg_lang, fsm, test_db)
+
+        assert await fsm.get_state() is None
+        assert "kerakli tilni tanlang" in msg_lang.answer.call_args[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_open_appeal_media_group_album(test_db, memory_storage, mock_config):
+    """Verify album of photos in open appeal includes student identity in rector delivery."""
+    media_group_collector.delay_seconds = 0.05
+
+    fsm = make_fsm_context(memory_storage)
+    user_id = 9944
+    await test_db.set_user_language(user_id, "uz")
+    await fsm.set_state(AppealStates.waiting_for_appeal)
+    await fsm.update_data(is_anonymous=False, full_name="Zafar Ergashev", contact_info="+998971112233")
+
+    mock_bot = AsyncMock()
+    # Leader and follower messages
+    msg1 = make_mock_message(
+        photo=[PhotoSize(file_id="p1", file_unique_id="u1", width=100, height=100)],
+        caption="Laboratoriya rasmlari",
+        media_group_id="group_open_1",
+        user_id=user_id,
+    )
+    msg1.message_id = 301
+    msg2 = make_mock_message(
+        photo=[PhotoSize(file_id="p2", file_unique_id="u2", width=100, height=100)],
+        media_group_id="group_open_1",
+        user_id=user_id,
+    )
+    msg2.message_id = 302
+
+    # Concurrently receive both messages belonging to the media album
+    import asyncio
+    await asyncio.gather(
+        handle_appeal_content(msg1, fsm, mock_bot, test_db, mock_config),
+        handle_appeal_content(msg2, fsm, mock_bot, test_db, mock_config),
+    )
+
+    assert await fsm.get_state() is None
+    # Rector header sent
+    assert mock_bot.send_message.called
+    rector_header = mock_bot.send_message.call_args[1]["text"]
+    assert "📬 <b>Yangi ochiq murojaat</b>" in rector_header
+    assert "Zafar Ergashev" in rector_header
+    assert "+998971112233" in rector_header
+    assert "Laboratoriya rasmlari" in rector_header
+
+    # Student confirmation sent to whichever message was processed as leader
+    answered_msg = msg1 if msg1.answer.called else msg2
+    assert answered_msg.answer.called
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in answered_msg.answer.call_args[1]["text"]
 
 

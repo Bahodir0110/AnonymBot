@@ -38,7 +38,7 @@ class Database:
                 """
             )
 
-            # Appeals table: stores sequential references and metadata WITHOUT student identity
+            # Appeals table: stores sequential references and metadata (with optional student identity for open appeals)
             await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS appeals (
@@ -46,10 +46,23 @@ class Database:
                     reference_code TEXT NOT NULL,
                     language_code TEXT NOT NULL,
                     content_type TEXT NOT NULL,
+                    is_anonymous INTEGER NOT NULL DEFAULT 1,
+                    full_name TEXT,
+                    contact_info TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
+
+            # Migration: ensure newly added columns exist in previously created databases
+            async with db.execute("PRAGMA table_info(appeals);") as cursor:
+                columns = [row[1] for row in await cursor.fetchall()]
+            if "is_anonymous" not in columns:
+                await db.execute("ALTER TABLE appeals ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 1;")
+            if "full_name" not in columns:
+                await db.execute("ALTER TABLE appeals ADD COLUMN full_name TEXT;")
+            if "contact_info" not in columns:
+                await db.execute("ALTER TABLE appeals ADD COLUMN contact_info TEXT;")
 
             await db.commit()
 
@@ -120,15 +133,23 @@ class Database:
             )
             await db.commit()
 
-    async def create_appeal(self, language_code: str, content_type: str) -> Tuple[int, str]:
+    async def create_appeal(
+        self,
+        language_code: str,
+        content_type: str,
+        is_anonymous: bool = True,
+        full_name: Optional[str] = None,
+        contact_info: Optional[str] = None,
+    ) -> Tuple[int, str]:
         """Create new appeal record and return (id, reference_code) e.g. (1, '#TT-0001')."""
+        anon_val = 1 if is_anonymous else 0
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 """
-                INSERT INTO appeals (reference_code, language_code, content_type)
-                VALUES ('PENDING', ?, ?);
+                INSERT INTO appeals (reference_code, language_code, content_type, is_anonymous, full_name, contact_info)
+                VALUES ('PENDING', ?, ?, ?, ?, ?);
                 """,
-                (language_code, content_type),
+                (language_code, content_type, anon_val, full_name, contact_info),
             ) as cursor:
                 appeal_id = cursor.lastrowid
                 ref_code = format_reference_id(appeal_id)
@@ -139,6 +160,16 @@ class Database:
             )
             await db.commit()
             return appeal_id, ref_code
+
+    async def get_appeal(self, appeal_id: int) -> Optional[dict]:
+        """Fetch an appeal by its numeric ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM appeals WHERE id = ?", (appeal_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
 
     async def get_appeal_count(self) -> int:
         """Return total number of appeals submitted."""

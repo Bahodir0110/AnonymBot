@@ -33,10 +33,25 @@ BTN_CANCEL = {
     "en": "❌ Cancel",
 }
 
+BTN_ANONYMOUS = {
+    "uz": "🔒 Anonim",
+    "ru": "🔒 Анонимно",
+    "en": "🔒 Anonymous",
+}
+
+BTN_OPEN = {
+    "uz": "🔓 Ochiq",
+    "ru": "🔓 Открыто",
+    "en": "🔓 Open",
+}
+
 # Sets for quick matching across any language
 ALL_SEND_APPEAL_BTNS = set(BTN_SEND_APPEAL.values())
 ALL_CHANGE_LANGUAGE_BTNS = set(BTN_CHANGE_LANGUAGE.values())
 ALL_CANCEL_BTNS = set(BTN_CANCEL.values())
+ALL_ANONYMOUS_BTNS = set(BTN_ANONYMOUS.values())
+ALL_OPEN_BTNS = set(BTN_OPEN.values())
+ALL_APPEAL_TYPE_BTNS = ALL_ANONYMOUS_BTNS | ALL_OPEN_BTNS
 
 TEXTS: Dict[str, Dict[str, str]] = {
     "start_welcome": {
@@ -74,10 +89,35 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Главное меню. Чтобы отправить обращение, нажмите кнопку ниже:",
         "en": "Main menu. To send an appeal, press the button below:",
     },
+    "choose_appeal_type": {
+        "uz": "🔐 Murojaat turini tanlang:",
+        "ru": "🔐 Выберите тип обращения:",
+        "en": "🔐 Choose appeal type:",
+    },
+    "name_prompt": {
+        "uz": "👤 Ism-familiyangizni kiriting:",
+        "ru": "👤 Как вас зовут?",
+        "en": "👤 What is your full name?",
+    },
+    "contact_prompt": {
+        "uz": "📞 Bog'lanish uchun kontakt (telefon yoki email):",
+        "ru": "📞 Укажите контакт для связи (телефон или email):",
+        "en": "📞 Enter contact info (phone or email):",
+    },
+    "invalid_name": {
+        "uz": "👤 Iltimos, ism-familiyangizni matn ko'rinishida kiriting:",
+        "ru": "👤 Пожалуйста, укажите ваше имя и фамилию текстом:",
+        "en": "👤 Please enter your full name as text:",
+    },
+    "invalid_contact": {
+        "uz": "📞 Iltimos, bog'lanish kontaktini matn ko'rinishida kiriting:",
+        "ru": "📞 Пожалуйста, укажите контакт для связи текстом:",
+        "en": "📞 Please enter your contact info as text:",
+    },
     "appeal_prompt": {
-        "uz": "✍️ Murojaatingizni yozing:\n\n<i>(Matn, rasm, hujjat/PDF, audio yoki video yuborishingiz mumkin)</i>",
-        "ru": "✍️ Напишите ваше обращение:\n\n<i>(Вы можете отправить текст, фото, документ/PDF, аудио или видео)</i>",
-        "en": "✍️ Write your appeal:\n\n<i>(You can send text, photo, document/PDF, audio or video)</i>",
+        "uz": "✍️ Murojaatingizni yozing:",
+        "ru": "✍️ Опишите ваше обращение:",
+        "en": "✍️ Write your appeal:",
     },
     "appeal_submitted": {
         "uz": (
@@ -91,6 +131,34 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "en": (
             "✅ Thank you! Your appeal has been sent.\n\n"
             "🔒 Anonymous appeal — replies and status are not tracked."
+        ),
+    },
+    "appeal_submitted_anonymous": {
+        "uz": (
+            "✅ Rahmat! Murojaatingiz yuborildi.\n\n"
+            "🔒 Anonim murojaat — javob va holat kuzatilmaydi."
+        ),
+        "ru": (
+            "✅ Спасибо! Ваше обращение отправлено.\n\n"
+            "🔒 Анонимное обращение — ответ и статус не отслеживаются."
+        ),
+        "en": (
+            "✅ Thank you! Your appeal has been sent.\n\n"
+            "🔒 Anonymous appeal — replies and status are not tracked."
+        ),
+    },
+    "appeal_submitted_open": {
+        "uz": (
+            "✅ Rahmat! Murojaatingiz yuborildi.\n\n"
+            "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi."
+        ),
+        "ru": (
+            "✅ Спасибо! Ваше обращение отправлено.\n\n"
+            "🔓 Открытое обращение — ваши данные переданы ректору."
+        ),
+        "en": (
+            "✅ Thank you! Your appeal has been sent.\n\n"
+            "🔓 Open appeal — your contact details were delivered to the rector."
         ),
     },
     "appeal_cancelled": {
@@ -138,6 +206,8 @@ def get_button_text(button_type: str, lang: str = "uz") -> str:
         "send_appeal": BTN_SEND_APPEAL,
         "change_language": BTN_CHANGE_LANGUAGE,
         "cancel": BTN_CANCEL,
+        "anonymous": BTN_ANONYMOUS,
+        "open": BTN_OPEN,
     }
     mapping = button_map.get(button_type, {})
     return mapping.get(lang, mapping.get("uz", ""))
