@@ -90,12 +90,14 @@ def test_build_rector_header_open():
         full_name="Alisher Navoiy",
         contact_info="+998901234567",
         language_code="uz",
+        telegram_username="alisher_navoiy",
     )
     assert "📬 <b>Yangi ochiq murojaat</b>" in header_uz
     assert "🆔 <b>Murojaat ID:</b> <code>#TT-0005</code>" in header_uz
     assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in header_uz
     assert "👤 <b>Talaba / F.I.Sh.:</b> Alisher Navoiy" in header_uz
     assert "📞 <b>Aloqa:</b> +998901234567" in header_uz
+    assert "✈️ <b>Telegram:</b> @alisher_navoiy" in header_uz
     assert "📅 <b>Sana:</b> 2026-09-22 14:15:00 (UTC+5)" in header_uz
     assert "🌐 <b>Til:</b> O'zbekcha" in header_uz
 
@@ -107,10 +109,12 @@ def test_build_rector_header_open():
         full_name="Иван Иванов",
         contact_info="ivan@example.com",
         language_code="ru",
+        telegram_username=None,
     )
     assert "📬 <b>Новое открытое обращение</b>" in header_ru
     assert "Иван Иванов" in header_ru
     assert "ivan@example.com" in header_ru
+    assert "✈️ <b>Telegram:</b> <i>Не указан</i>" in header_ru
 
     header_en = build_rector_header(
         reference_id="#TT-0007",
@@ -120,8 +124,10 @@ def test_build_rector_header_open():
         full_name="John Doe",
         contact_info="+1234567890",
         language_code="en",
+        telegram_username="@johndoe",
     )
     assert "📬 <b>New Open Appeal</b>" in header_en
+    assert "✈️ <b>Telegram:</b> @johndoe" in header_en
 
 
 def test_split_text_chunks():

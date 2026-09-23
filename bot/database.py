@@ -49,6 +49,7 @@ class Database:
                     is_anonymous INTEGER NOT NULL DEFAULT 1,
                     full_name TEXT,
                     contact_info TEXT,
+                    telegram_username TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
@@ -63,6 +64,8 @@ class Database:
                 await db.execute("ALTER TABLE appeals ADD COLUMN full_name TEXT;")
             if "contact_info" not in columns:
                 await db.execute("ALTER TABLE appeals ADD COLUMN contact_info TEXT;")
+            if "telegram_username" not in columns:
+                await db.execute("ALTER TABLE appeals ADD COLUMN telegram_username TEXT;")
 
             await db.commit()
 
@@ -140,16 +143,18 @@ class Database:
         is_anonymous: bool = True,
         full_name: Optional[str] = None,
         contact_info: Optional[str] = None,
+        telegram_username: Optional[str] = None,
     ) -> Tuple[int, str]:
         """Create new appeal record and return (id, reference_code) e.g. (1, '#TT-0001')."""
         anon_val = 1 if is_anonymous else 0
+        stored_username = None if is_anonymous else (telegram_username.lstrip("@") if telegram_username else None)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 """
-                INSERT INTO appeals (reference_code, language_code, content_type, is_anonymous, full_name, contact_info)
-                VALUES ('PENDING', ?, ?, ?, ?, ?);
+                INSERT INTO appeals (reference_code, language_code, content_type, is_anonymous, full_name, contact_info, telegram_username)
+                VALUES ('PENDING', ?, ?, ?, ?, ?, ?);
                 """,
-                (language_code, content_type, anon_val, full_name, contact_info),
+                (language_code, content_type, anon_val, full_name, contact_info, stored_username),
             ) as cursor:
                 appeal_id = cursor.lastrowid
                 ref_code = format_reference_id(appeal_id)

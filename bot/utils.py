@@ -53,6 +53,7 @@ def build_rector_header(
     full_name: Optional[str] = None,
     contact_info: Optional[str] = None,
     language_code: str = "uz",
+    telegram_username: Optional[str] = None,
 ) -> str:
     """Construct standard notification header for Rector delivery."""
     if is_anonymous:
@@ -76,12 +77,25 @@ def build_rector_header(
             "en": "📬 <b>New Open Appeal</b>",
         }
         title = title_map.get(language_code, title_map["uz"])
+
+        if telegram_username:
+            clean_username = telegram_username.lstrip("@")
+            username_display = f"@{escape_html(clean_username)}"
+        else:
+            no_username_map = {
+                "uz": "<i>Mavjud emas</i>",
+                "ru": "<i>Не указан</i>",
+                "en": "<i>Not set</i>",
+            }
+            username_display = no_username_map.get(language_code, "<i>Mavjud emas</i>")
+
         return (
             f"{title}\n"
             f"🆔 <b>Murojaat ID:</b> <code>{escape_html(reference_id)}</code>\n"
             "🔓 <b>Turi:</b> Ochiq (Oshkora)\n"
             f"👤 <b>Talaba / F.I.Sh.:</b> {escape_html(full_name or '')}\n"
             f"📞 <b>Aloqa:</b> {escape_html(contact_info or '')}\n"
+            f"✈️ <b>Telegram:</b> {username_display}\n"
             f"📅 <b>Sana:</b> {escape_html(timestamp_str)}\n"
             f"🌐 <b>Til:</b> {escape_html(language_name)}"
         )

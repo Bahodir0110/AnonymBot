@@ -87,6 +87,7 @@ async def test_database_anonymity_schema(temp_db):
     assert "is_anonymous" in columns
     assert "full_name" in columns
     assert "contact_info" in columns
+    assert "telegram_username" in columns
     assert "created_at" in columns
 
     # Strict check: telegram user_id must NOT be stored in appeals
@@ -97,13 +98,14 @@ async def test_database_anonymity_schema(temp_db):
 
 @pytest.mark.asyncio
 async def test_open_appeal_storage(temp_db):
-    """Verify storing open appeal records with student name and contact details."""
+    """Verify storing open appeal records with student name, contact details, and username."""
     aid, ref = await temp_db.create_appeal(
         language_code="uz",
         content_type="text",
         is_anonymous=False,
         full_name="Bobur Mirzo",
         contact_info="+998901234567",
+        telegram_username="@bobur_dev",
     )
     assert aid == 1
     assert ref == "#TT-0001"
@@ -113,23 +115,26 @@ async def test_open_appeal_storage(temp_db):
     assert row["is_anonymous"] == 0
     assert row["full_name"] == "Bobur Mirzo"
     assert row["contact_info"] == "+998901234567"
+    assert row["telegram_username"] == "bobur_dev"
 
     # Anonymous appeal
     aid2, ref2 = await temp_db.create_appeal(
         language_code="ru",
         content_type="photo",
         is_anonymous=True,
+        telegram_username="should_be_ignored",
     )
     row2 = await temp_db.get_appeal(aid2)
     assert row2 is not None
     assert row2["is_anonymous"] == 1
     assert row2["full_name"] is None
     assert row2["contact_info"] is None
+    assert row2["telegram_username"] is None
 
 
 @pytest.mark.asyncio
 async def test_database_safe_migration(tmp_path):
-    """Verify that existing database tables without is_anonymous/full_name/contact_info are safely migrated."""
+    """Verify that existing database tables without is_anonymous/full_name/contact_info/telegram_username are safely migrated."""
     old_db_file = tmp_path / "old_bot.db"
 
     # Create old schema table without the new columns
@@ -162,6 +167,7 @@ async def test_database_safe_migration(tmp_path):
     assert "is_anonymous" in cols
     assert "full_name" in cols
     assert "contact_info" in cols
+    assert "telegram_username" in cols
 
     # Verify old data survived
     old_row = await migrated_db.get_appeal(1)

@@ -65,6 +65,7 @@ def make_mock_message(
     animation=None,
     contact=None,
     chat_type="private",
+    username="student123",
 ):
     msg = AsyncMock(spec=Message)
     msg.message_id = 99
@@ -80,7 +81,7 @@ def make_mock_message(
     msg.contact = contact
     msg.media_group_id = media_group_id
 
-    user = User(id=user_id, is_bot=False, first_name="Student", username="student123")
+    user = User(id=user_id, is_bot=False, first_name="Student", username=username)
     chat = Chat(id=chat_id, type=chat_type)
     msg.from_user = user
     msg.chat = chat
@@ -613,6 +614,7 @@ async def test_open_flow_complete_uz(test_db, memory_storage, mock_config):
     assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in rector_text
     assert "👤 <b>Talaba / F.I.Sh.:</b> Anvar Qodirov" in rector_text
     assert "📞 <b>Aloqa:</b> +998901112233" in rector_text
+    assert "✈️ <b>Telegram:</b> @student123" in rector_text
     assert "Kutubxonada yangi kitoblar kerak." in rector_text
 
     # Student confirmation
@@ -625,6 +627,7 @@ async def test_open_flow_complete_uz(test_db, memory_storage, mock_config):
     assert appeal["is_anonymous"] == 0
     assert appeal["full_name"] == "Anvar Qodirov"
     assert appeal["contact_info"] == "+998901112233"
+    assert appeal["telegram_username"] == "student123"
 
 
 @pytest.mark.asyncio
@@ -660,7 +663,7 @@ async def test_open_flow_complete_ru(test_db, memory_storage, mock_config):
 
     # Step 5: Submit Appeal
     mock_bot = AsyncMock()
-    msg_content = make_mock_message(text="Вопрос по общежитию.", user_id=user_id)
+    msg_content = make_mock_message(text="Вопрос по общежитию.", user_id=user_id, username=None)
     await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
 
     assert await fsm.get_state() is None
@@ -670,6 +673,7 @@ async def test_open_flow_complete_ru(test_db, memory_storage, mock_config):
     assert "🔓 <b>Turi:</b> Ochiq (Oshkora)" in rector_text
     assert "👤 <b>Talaba / F.I.Sh.:</b> Алексей Смирнов" in rector_text
     assert "📞 <b>Aloqa:</b> alex@example.com" in rector_text
+    assert "✈️ <b>Telegram:</b> <i>Не указан</i>" in rector_text
 
     student_confirm = msg_content.answer.call_args[1]["text"]
     assert "✅ Спасибо! Ваше обращение отправлено." in student_confirm
@@ -709,7 +713,7 @@ async def test_open_flow_complete_en(test_db, memory_storage, mock_config):
 
     # Step 5: Submit Appeal
     mock_bot = AsyncMock()
-    msg_content = make_mock_message(text="Request for cafeteria improvements.", user_id=user_id)
+    msg_content = make_mock_message(text="Request for cafeteria improvements.", user_id=user_id, username="alicesmith")
     await handle_appeal_content(msg_content, fsm, mock_bot, test_db, mock_config)
 
     assert await fsm.get_state() is None
@@ -718,6 +722,7 @@ async def test_open_flow_complete_en(test_db, memory_storage, mock_config):
     assert "📬 <b>New Open Appeal</b>" in rector_text
     assert "Alice Smith" in rector_text
     assert "+1234567890" in rector_text
+    assert "✈️ <b>Telegram:</b> @alicesmith" in rector_text
 
     student_confirm = msg_content.answer.call_args[1]["text"]
     assert "✅ Thank you! Your appeal has been sent." in student_confirm
@@ -726,7 +731,7 @@ async def test_open_flow_complete_en(test_db, memory_storage, mock_config):
 
 @pytest.mark.asyncio
 async def test_open_appeal_with_photo(test_db, memory_storage, mock_config):
-    """Test submitting open appeal with photo attachment includes student identity in caption."""
+    """Test submitting open appeal with photo attachment includes student identity and username in caption."""
     fsm = make_fsm_context(memory_storage)
     user_id = 7775
     await test_db.set_user_language(user_id, "uz")
@@ -735,7 +740,7 @@ async def test_open_appeal_with_photo(test_db, memory_storage, mock_config):
 
     mock_bot = AsyncMock()
     photo_mock = [PhotoSize(file_id="photo999", file_unique_id="u999", width=800, height=600)]
-    msg = make_mock_message(photo=photo_mock, caption="Bino fotosi", user_id=user_id)
+    msg = make_mock_message(photo=photo_mock, caption="Bino fotosi", user_id=user_id, username="sardor_ali")
 
     await handle_appeal_content(msg, fsm, mock_bot, test_db, mock_config)
 
@@ -745,6 +750,7 @@ async def test_open_appeal_with_photo(test_db, memory_storage, mock_config):
     assert "📬 <b>Yangi ochiq murojaat</b>" in caption
     assert "Sardor Aliyev" in caption
     assert "+998991234567" in caption
+    assert "✈️ <b>Telegram:</b> @sardor_ali" in caption
     assert "Bino fotosi" in caption
 
     student_reply = msg.answer.call_args[1]["text"]
@@ -902,6 +908,7 @@ async def test_open_appeal_media_group_album(test_db, memory_storage, mock_confi
     assert "📬 <b>Yangi ochiq murojaat</b>" in rector_header
     assert "Zafar Ergashev" in rector_header
     assert "+998971112233" in rector_header
+    assert "✈️ <b>Telegram:</b> @student123" in rector_header
     assert "Laboratoriya rasmlari" in rector_header
 
     # Student confirmation sent to whichever message was processed as leader

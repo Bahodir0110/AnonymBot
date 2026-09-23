@@ -435,6 +435,11 @@ async def handle_appeal_content(
     is_anonymous = fsm_data.get("is_anonymous", True)
     full_name = fsm_data.get("full_name")
     contact_info = fsm_data.get("contact_info")
+    telegram_username = (
+        message.from_user.username
+        if (not is_anonymous and message.from_user and message.from_user.username)
+        else None
+    )
 
     # Create appeal record in DB and obtain sequential reference ID (e.g. #TT-0001)
     appeal_id, ref_code = await db.create_appeal(
@@ -443,6 +448,7 @@ async def handle_appeal_content(
         is_anonymous=is_anonymous,
         full_name=full_name,
         contact_info=contact_info,
+        telegram_username=telegram_username,
     )
 
     # Update cooldown timestamp for student
@@ -462,6 +468,7 @@ async def handle_appeal_content(
         full_name=full_name,
         contact_info=contact_info,
         language_code=user_lang,
+        telegram_username=telegram_username,
     )
 
     # Deliver to Rector chat ID (and optional thread/topic)
