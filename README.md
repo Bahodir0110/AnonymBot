@@ -1,4 +1,4 @@
-# 🏛 Tash Tech Rector Anonymous Telegram Bot
+# 🏛 Tash Tech CEO Appeals Telegram Bot
 
 [![CI](https://github.com/tashtech/rector-anonymous-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/tashtech/rector-anonymous-bot/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An official anonymous messaging bot for **Tash Tech University** students in Tashkent to send proposals, feedback, and complaints directly to the Rector.
+An official appeals bot for **Tash Tech University** students in Tashkent to send proposals, feedback, and complaints directly to the CEO.
 
 ---
 
@@ -96,13 +96,13 @@ pytest -v
 ### 🌟 Asosiy Imkoniyatlar
 
 1. **100% Kafolatlangan Anonimlik**:
-   - Xabarlar va media fayllar Telegram `copy_message` orqali yuboriladi. Talabaning ismi, username'i, profili yoki telefon raqami Rektorga ko'rsatilmaydi.
-   - Ma'lumotlar bazasida talaba shaxsi va yuborilgan murojaatlar bir-biriga bog'lanmagan (Zero-Knowledge arxitekturasi).
+   - Xabarlar va media fayllar Telegram `copy_message` orqali yuboriladi. Anonim rejimda talabaning ismi, username'i, profili yoki telefon raqami ijrochi direktorga ko'rsatilmaydi.
+   - Ma'lumotlar bazasida anonim murojaatlar talaba shaxsi bilan bog'lanmagan (Zero-Knowledge arxitekturasi).
 2. **3 ta Tilni Qo'llab-quvvatlash**:
    - O'zbekcha (Lotin), Ruscha va Inglizcha.
    - `/start` bosilganda inline tugmalar orqali til tanlanadi va xohlagan paytda `🌐 Tilni o'zgartirish` orqali almashtiriladi.
-3. **Rektorga Bir Tomonlama Yetkazish**:
-   - `.env` orqali rektorning shaxsiy Telegram ID'si yoki maxsus yopiq guruh/kanal ID'si (`RECTOR_CHAT_ID`) sozlanadi.
+3. **Ijrochi direktorga Yetkazish**:
+   - `.env` orqali ijrochi direktorning shaxsiy Telegram ID'si yoki maxsus yopiq guruh/kanal ID'si (`RECTOR_CHAT_ID`) sozlanadi.
    - Forum guruhlar uchun mavzu (topic) ID'si (`RECTOR_THREAD_ID`) qo'llab-quvvatlanadi.
    - Talabaga javob qaytarilmaydi (bir tomonlama aloqa).
 4. **Har Qanday Media Turlari**:
@@ -110,7 +110,7 @@ pytest -v
 5. **Anti-Spam Himoyasi**:
    - Har bir talaba uchun murojaatlar oralig'ida kutish vaqti (`RATE_LIMIT_SECONDS=60`).
    - Qayta yuborishdan oldin necha soniya qolganini ko'rsatuvchi ogohlantirish.
-6. **Rektor Bildirishnomasi**:
+6. **Bildirishnoma Formati**:
    - Har bir murojaat tartib raqami (`#TT-0001`), Toshkent vaqti (UTC+5) va talabaning tanlagan tili bilan birga yetkaziladi.
 
 ---

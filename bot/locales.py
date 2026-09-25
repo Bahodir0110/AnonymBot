@@ -56,20 +56,20 @@ ALL_APPEAL_TYPE_BTNS = ALL_ANONYMOUS_BTNS | ALL_OPEN_BTNS
 TEXTS: Dict[str, Dict[str, str]] = {
     "start_welcome": {
         "uz": (
-            "👋 Assalomu alaykum! <b>Tash Tech</b> rektoriga anonim murojaat qilish botiga xush kelibsiz.\n\n"
-            "Bu yerda siz o'z taklif, shikoyat va murojaatlaringizni to'g'ridan-to'g'ri rektorga "
+            "👋 Assalomu alaykum! <b>Tash Tech</b> ijrochi direktoriga anonim murojaat qilish botiga xush kelibsiz.\n\n"
+            "Bu yerda siz o'z taklif, shikoyat va murojaatlaringizni to'g'ridan-to'g'ri ijrochi direktorga "
             "to'liq anonim tarzda yuborishingiz mumkin. Shaxsingiz hech qachon oshkor etilmaydi.\n\n"
             "🌐 Iltimos, tilni tanlang:"
         ),
         "ru": (
-            "👋 Здравствуйте! Добро пожаловать в бот анонимных обращений к ректору <b>Tash Tech</b>.\n\n"
-            "Здесь вы можете отправить свои предложения, жалобы и обращения напрямую ректору "
+            "👋 Здравствуйте! Добро пожаловать в бот анонимных обращений к исполнительному директору <b>Tash Tech</b>.\n\n"
+            "Здесь вы можете отправить свои предложения, жалобы и обращения напрямую исполнительному директору "
             "полностью анонимно. Ваша личность никогда не будет раскрыта.\n\n"
             "🌐 Пожалуйста, выберите язык:"
         ),
         "en": (
-            "👋 Hello! Welcome to the <b>Tash Tech</b> Rector Anonymous Appeals Bot.\n\n"
-            "Here you can submit your proposals, complaints, and feedback directly to the rector "
+            "👋 Hello! Welcome to the <b>Tash Tech</b> CEO Anonymous Appeals Bot.\n\n"
+            "Here you can submit your proposals, complaints, and feedback directly to the CEO "
             "completely anonymously. Your identity will never be revealed.\n\n"
             "🌐 Please choose your language:"
         ),
@@ -150,15 +150,15 @@ TEXTS: Dict[str, Dict[str, str]] = {
     "appeal_submitted_open": {
         "uz": (
             "✅ Rahmat! Murojaatingiz yuborildi.\n\n"
-            "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi."
+            "🔓 Ochiq murojaat — ma'lumotlaringiz ijrochi direktorga yetkazildi."
         ),
         "ru": (
             "✅ Спасибо! Ваше обращение отправлено.\n\n"
-            "🔓 Открытое обращение — ваши данные переданы ректору."
+            "🔓 Открытое обращение — ваши данные переданы исполнительному директору."
         ),
         "en": (
             "✅ Thank you! Your appeal has been sent.\n\n"
-            "🔓 Open appeal — your contact details were delivered to the rector."
+            "🔓 Open appeal — your contact details were delivered to the CEO."
         ),
     },
     "appeal_cancelled": {

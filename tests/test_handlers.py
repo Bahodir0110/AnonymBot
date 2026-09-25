@@ -620,7 +620,7 @@ async def test_open_flow_complete_uz(test_db, memory_storage, mock_config):
     # Student confirmation
     student_confirm = msg_content.answer.call_args[1]["text"]
     assert "✅ Rahmat! Murojaatingiz yuborildi." in student_confirm
-    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in student_confirm
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz ijrochi direktorga yetkazildi." in student_confirm
 
     # DB record
     appeal = await test_db.get_appeal(1)
@@ -677,7 +677,7 @@ async def test_open_flow_complete_ru(test_db, memory_storage, mock_config):
 
     student_confirm = msg_content.answer.call_args[1]["text"]
     assert "✅ Спасибо! Ваше обращение отправлено." in student_confirm
-    assert "🔓 Открытое обращение — ваши данные переданы ректору." in student_confirm
+    assert "🔓 Открытое обращение — ваши данные переданы исполнительному директору." in student_confirm
 
 
 @pytest.mark.asyncio
@@ -726,7 +726,7 @@ async def test_open_flow_complete_en(test_db, memory_storage, mock_config):
 
     student_confirm = msg_content.answer.call_args[1]["text"]
     assert "✅ Thank you! Your appeal has been sent." in student_confirm
-    assert "🔓 Open appeal — your contact details were delivered to the rector." in student_confirm
+    assert "🔓 Open appeal — your contact details were delivered to the CEO." in student_confirm
 
 
 @pytest.mark.asyncio
@@ -754,7 +754,7 @@ async def test_open_appeal_with_photo(test_db, memory_storage, mock_config):
     assert "Bino fotosi" in caption
 
     student_reply = msg.answer.call_args[1]["text"]
-    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in student_reply
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz ijrochi direktorga yetkazildi." in student_reply
 
 
 @pytest.mark.asyncio
@@ -914,7 +914,7 @@ async def test_open_appeal_media_group_album(test_db, memory_storage, mock_confi
     # Student confirmation sent to whichever message was processed as leader
     answered_msg = msg1 if msg1.answer.called else msg2
     assert answered_msg.answer.called
-    assert "🔓 Ochiq murojaat — ma'lumotlaringiz rektorga yetkazildi." in answered_msg.answer.call_args[1]["text"]
+    assert "🔓 Ochiq murojaat — ma'lumotlaringiz ijrochi direktorga yetkazildi." in answered_msg.answer.call_args[1]["text"]
 
 
 @pytest.mark.asyncio
